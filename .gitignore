@@ -23,3 +23,19 @@ backend/voice/output/
 
 # Node modules (for desktop app later)
 node_modules/
+
+# -----------------------------
+# Piper TTS (runtime & outputs)
+# -----------------------------
+
+# Piper binaries (platform-specific)
+backend/voice/piper/*.exe
+backend/voice/piper/*.dll
+backend/voice/piper/pkgconfig/
+backend/voice/piper/espeak-ng-data/
+backend/voice/piper/libtashkeel_model.ort
+
+# Generated audio / temp files
+backend/voice/piper/*.wav
+backend/voice/piper/input.txt
+backend/voice/output/
