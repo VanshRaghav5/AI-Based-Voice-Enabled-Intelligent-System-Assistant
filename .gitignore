@@ -50,4 +50,3 @@ backend/voice/piper/libtashkeel_model.ort
 backend/voice/piper/*.wav
 backend/voice/piper/input.txt
 backend/voice/output/
-input.wax
