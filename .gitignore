@@ -1,52 +1,59 @@
-# Virtual environment
+# ==================================
+# Virtual Environment
+# ==================================
 venv/
-.env/
+.env
 
-# Python cache
+# ==================================
+# Python Cache
+# ==================================
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 
-# OS files
-.DS_Store
-Thumbs.db
+# ==================================
+# Runtime Audio Output
+# ==================================
+backend/data/audio/
 
-# Audio output files
-backend/voice/output/
+# ==================================
+# Whisper / Torch Cache
+# ==================================
+.cache/
+~/.cache/
 
-# Logs (future-proofing)
+# ==================================
+# Logs
+# ==================================
 *.log
 
+# ==================================
 # IDE / Editor
+# ==================================
 .vscode/
 .idea/
 
-# Node modules (for desktop app later)
-node_modules/
+# ==================================
+# OS Files
+# ==================================
+.DS_Store
+Thumbs.db
 
-# -----------------------------
-# Piper TTS (runtime & outputs)
-# -----------------------------
+# ==================================
+# Piper Runtime (Binary + Data)
+# ==================================
+backend/voice_engine/tts/piper/*.exe
+backend/voice_engine/tts/piper/*.dll
+backend/voice_engine/tts/piper/espeak-ng-data/
+backend/voice_engine/tts/piper/pkgconfig/
+backend/voice_engine/tts/piper/libtashkeel_model.ort
 
-# Piper binaries (platform-specific)
-backend/voice/piper/*.exe
-backend/voice/piper/*.dll
-backend/voice/piper/pkgconfig/
-backend/voice/piper/espeak-ng-data/
-backend/voice/piper/libtashkeel_model.ort
+# Generated Piper temp files
+backend/voice_engine/tts/piper/*.wav
+backend/voice_engine/tts/piper/input.txt
+# Ignore all wav audio files
+*.wav
 
-# Generated audio / temp files
-backend/voice/piper/*.wav
-backend/voice/piper/input.txt
-backend/voice/output/
-
-# Piper runtime (DO NOT TRACK)
-backend/voice/piper/espeak-ng-data/
-backend/voice/piper/*.exe
-backend/voice/piper/*.dll
-backend/voice/piper/libtashkeel_model.ort
-
-# Generated audio / temp
-backend/voice/piper/*.wav
-backend/voice/piper/input.txt
-backend/voice/output/
+# Ignore runtime audio folder
+backend/data/audio/
