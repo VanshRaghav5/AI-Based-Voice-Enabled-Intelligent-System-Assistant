@@ -1,11 +1,10 @@
-from fastapi import FastAPI
-from backend.api.voice import router as voice_router
+from voice_engine.audio_pipeline import listen, speak
 
-app = FastAPI(title="OmniAssist AI Backend")
+text = listen()
+print("User said:", text)
 
-app.include_router(voice_router, prefix="/api")
-
-
-@app.get("/")
-def root():
-    return {"message": "OmniAssist AI backend is running"}
+if text:
+    response = "You said " + text
+    speak(response)
+else:
+    speak("I did not hear anything clearly.")
