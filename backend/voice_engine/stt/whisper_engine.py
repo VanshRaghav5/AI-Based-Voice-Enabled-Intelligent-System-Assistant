@@ -29,9 +29,11 @@ def transcribe_audio(audio_path: str) -> str:
         print("🧠 Transcribing...")
 
         result = model.transcribe(
-            audio_path,
-            fp16=(DEVICE == "cuda")  # Use fp16 only if GPU available
-        )
+                    audio_path,
+                fp16=(DEVICE == "cuda")
+            )
+
+
 
         return result["text"].strip()
 

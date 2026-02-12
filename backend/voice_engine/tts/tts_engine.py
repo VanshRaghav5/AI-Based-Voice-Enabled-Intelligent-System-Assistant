@@ -1,7 +1,11 @@
+from email.mime import audio
 import subprocess
 import os
 import uuid
 import sys
+import sounddevice as sd
+import scipy.io.wavfile as wav
+
 
 # ---------- BASE PATHS ----------
 BASE_DIR = os.path.dirname(__file__)
@@ -60,13 +64,12 @@ def speak_text(text: str) -> str:
             timeout=30  # prevent hanging
         )
 
-        # Play audio (Windows-safe)
-        if sys.platform.startswith("win"):
-            os.startfile(output_file)
-        else:
-            print("Audio generated at:", output_file)
+        # Play audio internally
+        rate, audio = wav.read(output_file)
+        sd.play(audio, rate)
+        sd.wait()
 
-        return output_file
+        os.remove(output_file)
 
     except subprocess.TimeoutExpired:
         print("[TTS Error] Piper timed out.")
