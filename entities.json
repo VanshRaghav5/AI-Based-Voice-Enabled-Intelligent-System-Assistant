@@ -1,0 +1,34 @@
+{
+  "open_application": {
+    "required": ["application"],
+    "optional": []
+  },
+  "open_application_and_navigate": {
+    "required": ["application", "url"],
+    "optional": []
+  },
+  "play_music": {
+    "required": ["song"],
+    "optional": ["artist"]
+  },
+  "get_weather": {
+    "required": ["location"],
+    "optional": []
+  },
+  "get_fact": {
+    "required": ["subject", "fact_type"],
+    "optional": []
+  },
+  "get_definition": {
+    "required": ["topic"],
+    "optional": []
+  },
+  "get_tips": {
+    "required": ["topic"],
+    "optional": []
+  },
+  "unknown": {
+    "required": [],
+    "optional": []
+  }
+}
