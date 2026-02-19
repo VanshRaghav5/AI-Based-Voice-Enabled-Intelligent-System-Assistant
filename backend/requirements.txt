@@ -8,5 +8,7 @@ scipy
 # Speech-to-Text
 openai-whisper
 
-# Utility
-numpy
+# Automation
+keyboard
+pyautogui
+

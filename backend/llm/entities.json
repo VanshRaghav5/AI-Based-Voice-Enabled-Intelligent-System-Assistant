@@ -1,0 +1,91 @@
+{
+  "whatsapp_send": {
+    "required": ["target", "message"],
+    "optional": []
+  },
+  "file_open": {
+    "required": ["path"],
+    "optional": []
+  },
+  "file_create": {
+    "required": ["path"],
+    "optional": ["content"]
+  },
+  "file_delete": {
+    "required": ["path"],
+    "optional": []
+  },
+  "file_move": {
+    "required": ["source", "destination"],
+    "optional": []
+  },
+  "file_search": {
+    "required": ["search_term"],
+    "optional": ["root"]
+  },
+  "folder_create": {
+    "required": ["path"],
+    "optional": []
+  },
+  "folder_delete": {
+    "required": ["path"],
+    "optional": []
+  },
+  "volume_up": {
+    "required": [],
+    "optional": ["step"]
+  },
+  "volume_down": {
+    "required": [],
+    "optional": ["step"]
+  },
+  "volume_mute": {
+    "required": [],
+    "optional": []
+  },
+  "system_lock": {
+    "required": [],
+    "optional": []
+  },
+  "system_shutdown": {
+    "required": [],
+    "optional": ["force", "timeout"]
+  },
+  "system_restart": {
+    "required": [],
+    "optional": ["force", "timeout"]
+  },
+  "system_sleep": {
+    "required": [],
+    "optional": []
+  },
+  "entity_patterns": {
+    "path": {
+      "description": "File or folder path (Windows style with backslashes or Unix with forward slashes)",
+      "patterns": [
+        "([A-Z]:\\\\[^\"<>|]*)",
+        "([.]/[^\\s]*)",
+        "([.][.]/[^\\s]*)"
+      ],
+      "examples": ["D:\\Games\\test.txt", "C:\\Users\\Desktop", "./documents", "../files"]
+    },
+    "search_term": {
+      "description": "File name or pattern to search for",
+      "patterns": [
+        "([\\w\\s-]+[*]?[\\w.-]*)",
+        "([*][.]\\w+)"
+      ],
+      "examples": ["*.pdf", "test*", "document", "*.txt"]
+    },
+    "target": {
+      "description": "WhatsApp contact name or number",
+      "patterns": ["([+]?[0-9\\s-()]{10,})"],
+      "examples": ["John", "+1234567890", "Mom"]
+    },
+    "message": {
+      "description": "Text message content",
+      "patterns": [".*"],
+      "examples": ["Hello, how are you?", "Check this out"]
+    }
+  }
+}
