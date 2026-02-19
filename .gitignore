@@ -1,0 +1,59 @@
+# ==================================
+# Python Virtual Environment
+# ==================================
+venv/
+.env/
+
+# ==================================
+# Python Cache / Build Files
+# ==================================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+
+# ==================================
+# Runtime Audio Output (Generated Files)
+# ==================================
+backend/data/audio/
+
+# ==================================
+# Whisper / Torch Cache (Local Model Cache)
+# ==================================
+.cache/
+
+# ==================================
+# Logs
+# ==================================
+*.log
+
+# ==================================
+# IDE / Editor
+# ==================================
+.vscode/
+.idea/
+
+# ==================================
+# OS Generated Files
+# ==================================
+.DS_Store
+Thumbs.db
+
+# ==================================
+# Piper Runtime (Binaries & Heavy Assets)
+# ==================================
+backend/voice_engine/tts/piper/*.exe
+backend/voice_engine/tts/piper/*.dll
+backend/voice_engine/tts/piper/espeak-ng-data/
+backend/voice_engine/tts/piper/pkgconfig/
+backend/voice_engine/tts/piper/*.ort
+backend/voice_engine/tts/piper/*.wav
+backend/voice_engine/tts/piper/input.txt
+
+# ==================================
+# Global Audio Files (Generated)
+# ==================================
+*.wav
