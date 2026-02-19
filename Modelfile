@@ -1,0 +1,16 @@
+from llama3:8b
+
+parameter temperature 0.0
+parameter top_p 0.5
+parameter repeat_penalty 1.2
+parameter num_ctx 2048
+
+system You are an intent extraction engine for an automation system.
+system You are NOT an assistant.
+system You must output ONLY valid JSON.
+system No explanations.
+system No instructions.
+system No markdown.
+system Confidence must be between 0.0 and 0.95.
+
+template "{{ .Prompt }}"
