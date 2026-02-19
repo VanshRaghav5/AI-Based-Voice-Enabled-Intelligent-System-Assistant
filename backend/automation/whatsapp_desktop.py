@@ -3,6 +3,7 @@
 import subprocess
 import time
 import keyboard
+import pyautogui
 from backend.automation.base_tool import BaseTool
 
 
@@ -11,29 +12,55 @@ from backend.automation.base_tool import BaseTool
 # =========================
 
 def send_whatsapp_message(target: str, message: str):
-
-    # Example structure (replace with your real working code)
-
+    """
+    Send WhatsApp message with proper workflow:
+    1. Open WhatsApp
+    2. Search contact
+    3. Open chat
+    4. Type message
+    5. Send
+    """
+    
     # Open WhatsApp
     subprocess.Popen("start whatsapp:", shell=True)
-    time.sleep(3)
-
-    # Focus search
-    keyboard.press_and_release("ctrl+f")
-    time.sleep(1)
-
-    # Type contact name
-    keyboard.write(target)
-    time.sleep(1)
-
-    keyboard.press_and_release("enter")
-    time.sleep(1)
-
-    # Type message
-    keyboard.write(message)
-    time.sleep(0.5)
-
-    keyboard.press_and_release("enter")
+    time.sleep(4)  # Wait for WhatsApp to fully load
+    
+    try:
+        # Open search dialog
+        keyboard.press_and_release("ctrl+f")
+        time.sleep(1)
+        
+        # Clear any existing search text
+        keyboard.press_and_release("ctrl+a")
+        time.sleep(0.3)
+        keyboard.press_and_release("delete")
+        time.sleep(0.3)
+        
+        # Type contact name using pyautogui for reliability
+        pyautogui.typewrite(target, interval=0.05)
+        time.sleep(1)
+        
+        # Press Enter to select contact
+        keyboard.press_and_release("enter")
+        time.sleep(2)  # Wait for chat to open
+        
+        # Now we're in the chat, message field should be active
+        # Click somewhere in the middle-lower area to ensure chat window is focused
+        pyautogui.click(640, 400)
+        time.sleep(0.5)
+        
+        # Type the message
+        if message:
+            pyautogui.typewrite(message, interval=0.02)
+            time.sleep(0.5)
+        
+        # Send message with Enter
+        keyboard.press_and_release("enter")
+        time.sleep(1)
+        
+    except Exception as e:
+        print(f"Error in WhatsApp automation: {e}")
+        raise
 
 
 # =========================
