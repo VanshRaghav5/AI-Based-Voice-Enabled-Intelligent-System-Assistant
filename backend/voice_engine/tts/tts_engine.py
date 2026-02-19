@@ -1,13 +1,17 @@
-from email.mime import audio
 import subprocess
 import os
 import uuid
-import sys
 import sounddevice as sd
 import scipy.io.wavfile as wav
 
+from backend.config.settings import (
+    TTS_LENGTH_SCALE,
+    TTS_NOISE_SCALE,
+    TTS_NOISE_W
+)
+from backend.config.logger import logger
 
-# ---------- BASE PATHS ----------
+
 BASE_DIR = os.path.dirname(__file__)
 BACKEND_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", ".."))
 AUDIO_OUTPUT_DIR = os.path.join(BACKEND_ROOT, "data", "audio")
@@ -21,20 +25,11 @@ ESPEAK_DATA = os.path.join(PIPER_DIR, "espeak-ng-data")
 
 os.makedirs(AUDIO_OUTPUT_DIR, exist_ok=True)
 
-# ---------- VOICE TUNING ----------
-LENGTH_SCALE = "1.4"
-NOISE_SCALE = "0.667"
-NOISE_W = "0.8"
-
 
 def speak_text(text: str) -> str:
-    """
-    Converts text to speech using Piper.
-    Returns generated audio file path.
-    """
 
     if not os.path.exists(PIPER_EXE):
-        print("[TTS Error] Piper executable not found.")
+        logger.error("[TTS Error] Piper executable not found.")
         return ""
 
     try:
@@ -49,10 +44,12 @@ def speak_text(text: str) -> str:
             "--config", VOICE_CONFIG,
             "--output_file", output_file,
             "--espeak_data", ESPEAK_DATA,
-            "--length_scale", LENGTH_SCALE,
-            "--noise_scale", NOISE_SCALE,
-            "--noise_w", NOISE_W
+            "--length_scale", str(TTS_LENGTH_SCALE),
+            "--noise_scale", str(TTS_NOISE_SCALE),
+            "--noise_w", str(TTS_NOISE_W)
         ]
+
+        logger.info("Running Piper TTS...")
 
         subprocess.run(
             command,
@@ -61,20 +58,23 @@ def speak_text(text: str) -> str:
             text=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=30  # prevent hanging
+            timeout=30
         )
 
-        # Play audio internally
         rate, audio = wav.read(output_file)
         sd.play(audio, rate)
         sd.wait()
 
         os.remove(output_file)
 
+        logger.info("TTS playback completed")
+
+        return "success"
+
     except subprocess.TimeoutExpired:
-        print("[TTS Error] Piper timed out.")
+        logger.error("[TTS Error] Piper timed out.")
         return ""
 
     except Exception as e:
-        print(f"[TTS Error] {e}")
+        logger.error(f"[TTS Error] {e}")
         return ""

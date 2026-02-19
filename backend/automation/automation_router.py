@@ -4,6 +4,12 @@ from automation.file_manager import create_file, delete_file, open_folder
 from automation.browser_control import open_url, search_google, open_youtube
 
 
+from automation.whatsapp_desktop import WhatsAppDesktop
+
+whatsapp = WhatsAppDesktop()
+
+
+
 def execute(command: dict) -> dict:
     """
     Central automation dispatcher.
@@ -54,6 +60,25 @@ def execute(command: dict) -> dict:
 
         elif intent == "open_youtube":
             return open_youtube()
+        elif intent == "open_whatsapp":
+            success = whatsapp.open_app()
+            if success:
+                return {"status": "success", "message": "Opening WhatsApp"}
+            else:
+                return {"status": "error", "message": "Could not open WhatsApp"}
+
+
+        elif intent == "open_whatsapp_chat":
+            whatsapp.open_app()
+            whatsapp.open_chat(target)
+            return {"status": "success", "message": f"Opening chat with {target}"}
+
+        elif intent == "send_whatsapp":
+            whatsapp.open_app()
+            whatsapp.send_message(target, data)
+            return {"status": "success", "message": f"Message sent to {target}"}
+
+
 
         else:
             return {

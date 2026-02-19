@@ -3,13 +3,18 @@ import scipy.io.wavfile as wav
 import os
 import uuid
 
+from backend.config.logger import logger
+from backend.config.settings import RECORD_DURATION, SAMPLE_RATE
 
-AUDIO_DIR = os.path.join("backend", "data", "audio")
+
+BASE_DIR = os.path.dirname(__file__)
+BACKEND_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", ".."))
+AUDIO_DIR = os.path.join(BACKEND_ROOT, "data", "audio")
 
 
-def record_audio(duration=4, sample_rate=16000) -> str:
+def record_audio(duration=RECORD_DURATION, sample_rate=SAMPLE_RATE) -> str:
     """
-    Simple fixed-duration recording.
+    Fixed-duration audio recording.
     """
 
     os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -17,7 +22,7 @@ def record_audio(duration=4, sample_rate=16000) -> str:
     filename = f"{uuid.uuid4()}.wav"
     filepath = os.path.join(AUDIO_DIR, filename)
 
-    print("🎙 Recording... Speak now.")
+    logger.info("Recording started")
 
     audio = sd.rec(
         int(duration * sample_rate),
@@ -30,6 +35,6 @@ def record_audio(duration=4, sample_rate=16000) -> str:
 
     wav.write(filepath, sample_rate, audio)
 
-    print("✅ Recording complete")
+    logger.info("Recording complete")
 
     return filepath
