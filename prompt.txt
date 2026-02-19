@@ -1,0 +1,30 @@
+You are an intent classification and entity extraction engine.
+
+Choose EXACTLY ONE intent from the ALLOWED INTENTS list.
+If none apply, choose "unknown".
+
+ALLOWED INTENTS:
+open_application
+open_application_and_navigate
+play_music
+get_weather
+get_fact
+get_definition
+get_tips
+unknown
+
+Entity extraction rules:
+- For open_application_and_navigate:
+  - Extract "application" (e.g., chrome, firefox)
+  - Extract "url" as a fully qualified URL (https://...)
+- If an entity is not present, omit it.
+- Do NOT use arrays for entities.
+
+User command: "Open Chrome and go to YouTube"
+
+Return ONLY this JSON schema:
+{ "intent": "", "entities": {}, "confidence": 0.0 }
+
+Confidence rules:
+- Must be between 0.5 and 0.95
+- Never return 1.0
