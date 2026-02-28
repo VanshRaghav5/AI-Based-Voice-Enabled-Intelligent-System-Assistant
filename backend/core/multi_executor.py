@@ -6,6 +6,7 @@ class MultiExecutor:
     # Tools that require confirmation before execution
     CRITICAL_TOOLS = {
         "whatsapp.send",
+        "email.send",
         "file.delete",
         "folder.delete",
         "system.shutdown",
@@ -74,6 +75,10 @@ class MultiExecutor:
                 elif tool_name in ["file.delete", "folder.delete"]:
                     path = tool_args.get("path", "unknown")
                     confirm_msg = f"Delete: {path} (THIS CANNOT BE UNDONE)"
+                elif tool_name == "email.send":
+                    recipient = tool_args.get("recipient") or tool_args.get("target") or "unknown"
+                    subject = tool_args.get("subject", "")
+                    confirm_msg = f"Send email to {recipient}: subject='{subject}'"
                 elif tool_name == "file.move":
                     source = tool_args.get("source", "unknown")
                     dest = tool_args.get("destination", "unknown")
