@@ -1,0 +1,33 @@
+{
+    "name": "ai-voice-assistant-desktop",
+    "version": "1.0.0",
+    "description": "Desktop Experience Layer for AI-Based Voice Enabled Intelligent System Assistant",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dev": "electron --inspect=5858 .",
+        "dist": "electron-builder"
+    },
+    "keywords": [
+        "AI",
+        "Voice",
+        "Assistant",
+        "Electron"
+    ],
+    "author": "Uday Bansal",
+    "license": "MIT",
+    "dependencies": {
+        "axios": "^1.13.6"
+    },
+    "devDependencies": {
+        "electron": "^28.1.0",
+        "electron-builder": "^24.9.1"
+    },
+    "build": {
+        "appId": "com.uday.aivoiceassistant",
+        "win": {
+            "target": "portable",
+            "icon": "assets/icon.ico"
+        }
+    }
+}
