@@ -4,13 +4,14 @@
 
 ### Communication
 - `whatsapp_send` - Send WhatsApp message
-- `send_email` - Send email
+- `send_email` - Send email (requires intent + safety agents)
 
 ### File Operations
 - `file_open` (open_file) - Open/view a file
 - `file_create` (create_file) - Create a new file
 - `file_delete` (delete_file) - Delete a file
-- `file_move` (move_file) - Move/rename a file
+- `file_move`hi there
+(move_file) - Move/rename a file
 - `file_search` (search_file) - Search for files
 
 ### Folder Operations
@@ -34,6 +35,7 @@
 | Intent | Required | Optional |
 |--------|----------|----------|
 | whatsapp_send | target, message | - |
+| send_email | recipient, subject, body | - |
 | file_open | path | - |
 | file_create | path | content |
 | file_delete | path | - |

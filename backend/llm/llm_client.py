@@ -7,14 +7,15 @@ from backend.config.logger import logger
 
 class LLMClient:
 
-    def __init__(self, model="qwen2.5"):
+    def __init__(self, model="voice-assistant"):
         """Initialize LLM client with specified model.
         
         Args:
-            model: Model name (e.g., 'qwen2.5', 'qwen2.5:7b-instruct-q4_0')
+            model: Model name (e.g., 'voice-assistant', 'qwen2.5:7b-instruct-q4_0')
         """
         self.model = model
         self.ollama_available = self._check_ollama()
+        self.last_source = None  # Track last plan source: "ollama" or "fallback"
 
     def _check_ollama(self):
         """Check if Ollama is available and accessible."""
@@ -23,7 +24,9 @@ class LLMClient:
                 'ollama --version',
                 capture_output=True,
                 timeout=5,
-                shell=True
+                shell=True,
+                encoding='utf-8',
+                errors='replace'
             )
             is_available = result.returncode == 0
             if is_available:
@@ -49,6 +52,7 @@ class LLMClient:
             
             if not self.ollama_available:
                 logger.info("[LLMClient] Using fallback plan generation (keyword matching)")
+                self.last_source = "fallback"
                 return self._create_fallback_plan(prompt)
             
             # Try Ollama
@@ -63,26 +67,34 @@ class LLMClient:
                 text=True,
                 capture_output=True,
                 timeout=120,  # Increased timeout for slower inference
-                shell=True
+                shell=True,
+                encoding='utf-8',
+                errors='replace'  # Replace undecodable bytes with replacement character
             )
 
             if result.returncode != 0:
-                logger.error(f"[LLMClient] Ollama error: {result.stderr}")
+                self.last_source = "fallback"
                 return self._create_fallback_plan(prompt)
 
             output = result.stdout.strip()
             logger.info(f"[LLM Output] {output}")
 
             try:
-                return json.loads(output)
+                plan = json.loads(output)
+                self.last_source = "ollama"
+                return plan
             except json.JSONDecodeError:
                 logger.warning(f"[LLMClient] Invalid JSON from Ollama, using fallback")
+                self.last_source = "fallback"
                 return self._create_fallback_plan(prompt)
 
         except subprocess.TimeoutExpired:
             logger.warning("[LLMClient] Ollama timeout - using fallback")
+            self.last_source = "fallback"
             return self._create_fallback_plan(prompt)
         except Exception as e:
+            logger.warning(f"[LLMClient] Error: {e} - using fallback")
+            self.last_source = "fallback"
             logger.warning(f"[LLMClient] Error: {e} - using fallback")
             return self._create_fallback_plan(prompt)
 
@@ -102,10 +114,31 @@ class LLMClient:
         
         # WhatsApp commands
         if any(x in prompt_lower for x in ["whatsapp", "whats app"]):
-            if any(x in prompt_lower for x in ["open", "launch", "send"]):
+            # Prefer explicit send -> use registered send tool
+            if "send" in prompt_lower:
                 target = self._extract_contact(prompt)
                 message = self._extract_whatsapp_message(prompt)
                 steps.append({"name": "whatsapp.send", "args": {"target": target, "message": message}})
+            # If user asked to open/launch WhatsApp (without send), map to open tool
+            elif any(x in prompt_lower for x in ["open", "launch"]):
+                # If they asked to open a chat with a specific contact, open that chat
+                target = self._extract_contact(prompt)
+                if target and target != "default":
+                    steps.append({"name": "whatsapp.open_chat", "args": {"target": target}})
+                else:
+                    steps.append({"name": "whatsapp.open", "args": {}})
+
+        # Email commands
+        elif any(x in prompt_lower for x in ["email", "e-mail", "send email", "mail"]):
+            # Only trigger send when explicit 'send' is present; otherwise request agent
+            if "send" in prompt_lower or "email" in prompt_lower and any(k in prompt_lower for k in ["to", "subject", "body", "message"]):
+                recipient = self._extract_email_recipient(prompt)
+                subject = self._extract_email_subject(prompt)
+                body = self._extract_email_body(prompt)
+                steps.append({"name": "email.send", "args": {"recipient": recipient, "subject": subject, "body": body}})
+            else:
+                # If user only said 'open email' or similar, skip
+                logger.warning("[LLMClient] Email detected but no send intent found")
         
         # File open commands
         elif any(x in prompt_lower for x in ["open", "view", "read", "show"]):
@@ -248,6 +281,47 @@ class LLMClient:
         
         # Default fallback
         return "default"
+
+    def _extract_email_recipient(self, text: str) -> str:
+        """Extract recipient email or name after 'to'"""
+        # Try to find an email address
+        email_match = re.search(r'([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', text)
+        if email_match:
+            return email_match.group(1)
+
+        # Look for 'to <name>' patterns
+        match = re.search(r'(?:to|send to|email to)\s+"?([a-zA-Z0-9_\- ]+)"?', text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+
+        return ""
+
+    def _extract_email_subject(self, text: str) -> str:
+        """Extract subject from phrases like 'subject', 'about', or quoted subject."""
+        # Look for subject: ...
+        match = re.search(r'subject\s+(?:is|:)?\s*"?([^\"]+)"?', text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+
+        # Look for 'about <text>' after recipient
+        match = re.search(r'about\s+([^\n]+)', text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+
+        return ""
+
+    def _extract_email_body(self, text: str) -> str:
+        """Extract the email body from phrases like 'saying', 'message', or quoted text."""
+        match = re.search(r'(?:saying|message|body|with message)\s+"?([^\"]+)"?', text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+
+        # Fallback: quoted text
+        quoted = re.search(r'"([^"]+)"', text)
+        if quoted:
+            return quoted.group(1)
+
+        return ""
 
     def _extract_whatsapp_message(self, text: str) -> str:
         """Extract message text from WhatsApp command.
