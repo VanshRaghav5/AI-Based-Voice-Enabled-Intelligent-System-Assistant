@@ -11,4 +11,7 @@ openai-whisper
 # Automation
 keyboard
 pyautogui
+send2trash
+pygetwindow
+psutil
 
