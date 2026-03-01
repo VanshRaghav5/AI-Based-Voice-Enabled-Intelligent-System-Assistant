@@ -847,7 +847,7 @@ python example_command_parser.py
 - `backend/llm/parameter_extractor.py` - Parameter extraction engine
 - `backend/llm/parameter_validator.py` - Validation with error messages
 - `backend/core/command_parser.py` - Pipeline orchestrator
-- `example_command_parser.py` - Interactive demonstration
+- `examples/example_command_parser.py` - Interactive demonstration
 - `COMMAND_PARSING_SUMMARY.md` - Complete documentation (see this for deep dive)
 
 ---
@@ -964,7 +964,7 @@ print(f"Executed: {stats['executed_percentage']}%")
 - `tests/test_confidence_config.py` - 25 comprehensive tests
 
 **Demo & Docs**:
-- `example_confidence_system.py` - Interactive demonstration
+- `examples/example_confidence_system.py` - Interactive demonstration
 - `CONFIDENCE_SYSTEM_SUMMARY.md` - Complete documentation (see this for deep dive)
 
 #### 🚀 Try It Out

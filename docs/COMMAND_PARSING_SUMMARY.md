@@ -31,7 +31,7 @@ tests/
 ### 3. Examples & Documentation
 
 ```
-example_command_parser.py           # Interactive demonstration
+examples/example_command_parser.py  # Interactive demonstration
 COMMAND_PARSING_SUMMARY.md          # This file
 ```
 

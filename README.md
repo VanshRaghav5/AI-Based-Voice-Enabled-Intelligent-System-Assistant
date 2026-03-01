@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🧠 AI-Based Voice-Enabled Intelligent System (Windows)
 
 A modular, production-ready AI voice assistant for Windows desktop automation.
@@ -7,6 +6,7 @@ This system combines:
 
 - 🎙 Offline Speech-to-Text (Whisper)
 - 🔊 Offline Text-to-Speech (Piper)
+- 🤖 LLM Integration (Ollama)
 - ⚙ Agent-Based Automation Engine
 - 🧩 Tool Registry & Executor Architecture
 - 🖥 System + File + Application Automation
@@ -15,51 +15,82 @@ This system combines:
 
 ## 🚀 Architecture Overview
 
+```
 Voice Input (Whisper - GPU)
-↓
+        ↓
 Audio Pipeline
-↓
+        ↓
 Assistant Controller
-↓
-Agent / Planner
-↓
+        ↓
+Agent / Planner (Ollama LLM)
+        ↓
 Tool Registry
-↓
+        ↓
 Automation Tool Execution
-↓
+        ↓
 Voice Response (Piper TTS)
+```
 
-
-The system is fully modular and designed for scalability and future LLM integration.
+The system is fully modular and designed for scalability and LLM integration.
 
 ---
 
 ## 📁 Project Structure
 
-backend/
+```
+AI-Based-Voice-Enabled-Intelligent-System-Assistant/
 │
-├── voice_engine/ # STT, TTS, audio pipeline
-│ ├── input/
-│ ├── stt/
-│ ├── tts/
-│ └── audio_pipeline.py
+├── app.py                    # Main entry point
+├── README.md                 # This file
+├── pytest.ini                # Test configuration
+├── requirements-test.txt     # Test dependencies
 │
-├── automation/ # All automation tools
-│ ├── base_tool.py
-│ ├── system/
-│ ├── file/
-│ ├── whatsapp_desktop.py
-│ └── ...
+├── backend/                  # Core system code
+│   ├── voice_engine/         # STT, TTS, audio pipeline
+│   │   ├── input/
+│   │   ├── stt/
+│   │   ├── tts/
+│   │   └── audio_pipeline.py
+│   │
+│   ├── automation/           # All automation tools
+│   │   ├── base_tool.py
+│   │   ├── system/
+│   │   ├── file/
+│   │   ├── whatsapp_desktop.py
+│   │   └── ...
+│   │
+│   ├── core/                 # Agent, Executor, Tool Registry
+│   │   ├── assistant_controller.py
+│   │   ├── command_parser.py
+│   │   ├── executor.py
+│   │   ├── multi_executor.py
+│   │   ├── tool_registry.py
+│   │   └── ...
+│   │
+│   ├── llm/                  # LLM integration (Ollama)
+│   │   ├── llm_client.py
+│   │   ├── Modelfile
+│   │   └── ...
+│   │
+│   ├── config/               # Logger & settings
+│   ├── memory/               # Session & state management
+│   └── data/                 # Runtime storage
 │
-├── core/ # Agent, Executor, Tool Registry
-│ ├── assistant_controller.py
-│ ├── agent.py
-│ ├── executor.py
-│ └── tool_registry.py
+├── tests/                    # Comprehensive test suite
+│   ├── test_command_parser.py
+│   ├── test_confidence_tracker.py
+│   └── ...
 │
-├── config/ # Logger & settings
+├── docs/                     # Detailed documentation
+│   ├── COMPLETE_INSTALLATION_GUIDE.md
+│   ├── COMMAND_PARSING_SUMMARY.md
+│   ├── CONFIDENCE_SYSTEM_SUMMARY.md
+│   └── ...
 │
-└── data/ # Runtime storage (ignored in git)
+└── examples/                 # Demo scripts
+    ├── example_command_parser.py
+    └── example_confidence_system.py
+```
 
 
 ---
@@ -202,28 +233,33 @@ LLM Integration: Team Member
 
 UI & Deployment: Team Member
 
-📌 Status
-Production-ready local automation system with scalable agent architecture.
+---
 
+## 📚 Documentation
+
+For detailed guides and documentation, see the [docs/](docs/) directory:
+
+- **[Complete Installation Guide](docs/COMPLETE_INSTALLATION_GUIDE.md)** - Full setup instructions
+- **[Command Parsing System](docs/COMMAND_PARSING_SUMMARY.md)** - How commands are processed
+- **[Confidence System](docs/CONFIDENCE_SYSTEM_SUMMARY.md)** - Confidence tracking and scoring
+- **[Testing Guide](docs/TESTING_SUMMARY.md)** - Test coverage and framework
 
 ---
 
-# 🔥 This README Is:
+## 🎯 Examples
 
-- Clean
-- Professional
-- Evaluator-friendly
-- Architecture-focused
-- Industry-level structured
+Check out the [examples/](examples/) directory for:
+- Interactive command parser demonstration
+- Confidence system demonstration
+- Testing various system features
 
 ---
 
-If you want, I can also:
+## 📌 Status
 
-- Create a **high-impact GitHub landing header**
-- Add architecture diagram image
-- Make it more research-paper style
-- Or make it startup-style product README**
-
-Tell me the vibe you want.
-=======
+Production-ready AI voice assistant with:
+- ✅ Offline speech processing
+- ✅ LLM integration (Ollama)
+- ✅ Comprehensive automation tools
+- ✅ Full test coverage
+- ✅ Safety confirmations for critical operations

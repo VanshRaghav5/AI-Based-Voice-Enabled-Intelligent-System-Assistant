@@ -245,7 +245,7 @@ elif confidence_config.should_confirm(confidence):
 
 ### Demonstration Script
 
-#### `example_confidence_system.py` (~350 lines)
+#### `examples/example_confidence_system.py` (~350 lines)
 **Purpose**: Interactive demonstration of confidence system
 
 **Features**:
@@ -260,7 +260,7 @@ elif confidence_config.should_confirm(confidence):
 
 **Usage**:
 ```bash
-python example_confidence_system.py
+python examples/example_confidence_system.py
 ```
 
 **Output Includes**:
@@ -574,7 +574,7 @@ Persistent logging of all confidence scores for:
 - **Core**: `confidence_tracker.py`, `confidence_config.py`
 - **Enhanced**: `command_parser.py` (integrated)
 - **Tests**: `test_confidence_tracker.py`, `test_confidence_config.py`
-- **Demo**: `example_confidence_system.py`
+- **Demo**: `examples/example_confidence_system.py`
 - **Docs**: This file (`CONFIDENCE_SYSTEM_SUMMARY.md`)
 
 **Total**: 2 new modules + 2 test suites + 1 demo + updates = **Production-Ready Confidence System** ✨
