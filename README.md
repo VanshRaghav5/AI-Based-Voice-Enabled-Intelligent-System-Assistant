@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🧠 AI-Based Voice-Enabled Intelligent System (Windows)
 
 A modular, production-ready AI voice assistant for Windows desktop automation.
@@ -225,3 +226,4 @@ If you want, I can also:
 - Or make it startup-style product README**
 
 Tell me the vibe you want.
+=======
