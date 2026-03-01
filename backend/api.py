@@ -68,12 +68,28 @@ def root_health() -> dict:
 
 @app.get("/status", response_model=StatusResponse, tags=["status"])
 def get_status() -> StatusResponse:
-    """
-    Initial /status implementation.
-
-    For now this is static (IDLE + listening=True). In later steps
-    we'll wire this up to the real assistant process state.
-    """
+    """Return current assistant process state."""
     logger.info("[API] Status requested")
-    return StatusResponse(status="IDLE", listening=True, message=None)
+    status = "ACTIVE" if _is_assistant_running() else "IDLE"
+    return StatusResponse(status=status, listening=True, message=None)
+
+
+@app.post("/start", tags=["control"])
+def start_assistant() -> dict:
+    """Start the voice assistant process."""
+    logger.info("[API] Start requested")
+    if _is_assistant_running():
+        return {"status": "ACTIVE", "message": "Assistant already running"}
+    _start_assistant()
+    return {"status": "ACTIVE", "message": "Assistant started"}
+
+
+@app.post("/stop", tags=["control"])
+def stop_assistant() -> dict:
+    """Stop the voice assistant process."""
+    logger.info("[API] Stop requested")
+    if not _is_assistant_running():
+        return {"status": "IDLE", "message": "Assistant not running"}
+    _stop_assistant()
+    return {"status": "IDLE", "message": "Assistant stopped"}
 
