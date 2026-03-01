@@ -11,6 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOG_FILE = PROJECT_ROOT / "backend" / "data" / "assistant.log"
 assistant_process: subprocess.Popen | None = None
+listening_enabled: bool = True
 
 
 class StatusResponse(BaseModel):
@@ -19,6 +20,12 @@ class StatusResponse(BaseModel):
     status: str
     listening: bool = True
     message: str | None = None
+
+
+class ListeningConfig(BaseModel):
+    """Request body for /config/listening."""
+
+    enabled: bool
 
 
 app = FastAPI(title="AI Voice Assistant API")
@@ -72,7 +79,7 @@ def get_status() -> StatusResponse:
     """Return current assistant process state."""
     logger.info("[API] Status requested")
     status = "ACTIVE" if _is_assistant_running() else "IDLE"
-    return StatusResponse(status=status, listening=True, message=None)
+    return StatusResponse(status=status, listening=listening_enabled, message=None)
 
 
 @app.post("/start", tags=["control"])
@@ -114,4 +121,13 @@ def get_logs() -> dict:
     except FileNotFoundError:
         pass
     return {"logs": entries}
+
+
+@app.post("/config/listening", tags=["config"])
+def set_listening(config: ListeningConfig) -> dict:
+    """Toggle always-listening mode (stored in API state for future use)."""
+    global listening_enabled
+    listening_enabled = config.enabled
+    logger.info(f"[API] Always-listening set to {config.enabled}")
+    return {"status": "ok", "listening": config.enabled}
 
