@@ -49,9 +49,13 @@ class NetworkService {
             if (reachable) {
                 stateManager.addLog('Backend connection established.', 'system');
                 this.syncSystemStatus();
+                this.syncLogs();
             } else {
                 stateManager.addLog('Backend disconnected. Retrying...', 'error');
             }
+        } else if (reachable) {
+            // Periodic sync when already connected
+            this.syncLogs();
         }
     }
 
@@ -61,11 +65,26 @@ class NetworkService {
     async syncSystemStatus() {
         try {
             const data = await api.getStatus();
-            if (data && data.status) {
-                stateManager.setStatus(data.status);
+            if (data) {
+                if (data.status) stateManager.setStatus(data.status);
+                if (typeof data.listening === 'boolean') stateManager.setState({ isListening: data.listening });
             }
         } catch (error) {
             console.warn('Sync failed:', error.message);
+        }
+    }
+
+    /**
+     * Fetch execution logs from backend
+     */
+    async syncLogs() {
+        try {
+            const logData = await api.getLogs();
+            if (logData && Array.isArray(logData.logs)) {
+                stateManager.setLogs(logData.logs);
+            }
+        } catch (error) {
+            console.warn('Log sync failed:', error.message);
         }
     }
 }
