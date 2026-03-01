@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🧠 AI-Based Voice-Enabled Intelligent System (Windows)
 
 A modular, production-ready AI voice assistant for Windows desktop automation.
@@ -225,5 +224,8 @@ If you want, I can also:
 - Make it more research-paper style
 - Or make it startup-style product README**
 
-Tell me the vibe you want.
-=======
+### 5️⃣ Run API Server (for Desktop UI)
+
+From the project root:
+
+uvicorn backend.api:app --host 0.0.0.0 --port 8000
