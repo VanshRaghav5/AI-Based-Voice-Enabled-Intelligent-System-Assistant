@@ -14,12 +14,12 @@ class ControlPanel {
         try {
             if (action === 'START') {
                 stateManager.setStatus('STARTING');
-                await api.startAssistant();
-                stateManager.setStatus('ACTIVE');
+                const response = await api.startAssistant();
+                stateManager.setStatus(response?.status || 'ACTIVE');
             } else if (action === 'STOP') {
                 stateManager.setStatus('STOPPING');
-                await api.stopAssistant();
-                stateManager.setStatus('IDLE');
+                const response = await api.stopAssistant();
+                stateManager.setStatus(response?.status || 'IDLE');
             }
         } catch (error) {
             stateManager.setError(error.message);
