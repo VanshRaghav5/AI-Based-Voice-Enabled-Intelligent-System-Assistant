@@ -24,18 +24,6 @@ class ApiService {
     }
 
     /**
-     * Check if the backend is reachable
-     */
-    async checkHealth() {
-        try {
-            await this.client.get('/status', { timeout: 2000 });
-            return true;
-        } catch (error) {
-            return false;
-        }
-    }
-
-    /**
      * Get the current status of the voice assistant
      */
     async getStatus() {
