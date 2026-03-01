@@ -49,6 +49,16 @@ class StateManager {
     }
 
     /**
+     * Set all logs (bulk update from backend)
+     */
+    setLogs(logs) {
+        if (Array.isArray(logs)) {
+            this.state.logs = logs.slice(-100); // Keep last 100 logs
+            this.notify();
+        }
+    }
+
+    /**
      * Set the system status
      */
     setStatus(status) {
