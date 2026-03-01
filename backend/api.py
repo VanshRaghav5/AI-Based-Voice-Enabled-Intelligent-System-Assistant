@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LOG_FILE = PROJECT_ROOT / "backend" / "data" / "assistant.log"
 assistant_process: subprocess.Popen | None = None
 
 
@@ -92,4 +93,25 @@ def stop_assistant() -> dict:
         return {"status": "IDLE", "message": "Assistant not running"}
     _stop_assistant()
     return {"status": "IDLE", "message": "Assistant stopped"}
+
+
+@app.get("/logs", tags=["logs"])
+def get_logs() -> dict:
+    """Return recent log entries from assistant.log."""
+    logger.info("[API] Logs requested")
+    entries = []
+    try:
+        text = LOG_FILE.read_text(encoding="utf-8", errors="replace")
+        lines = text.strip().splitlines()
+        for line in lines[-200:]:  # Last 200 lines
+            parts = line.split(" - ", 2)
+            if len(parts) == 3:
+                timestamp, level, message = parts
+                log_type = level.lower() if level else "info"
+                entries.append({"timestamp": timestamp.strip(), "message": message, "type": log_type})
+            else:
+                entries.append({"timestamp": "", "message": line, "type": "info"})
+    except FileNotFoundError:
+        pass
+    return {"logs": entries}
 
