@@ -61,8 +61,9 @@ class NetworkService {
     async syncSystemStatus() {
         try {
             const data = await api.getStatus();
-            if (data && data.status) {
-                stateManager.setStatus(data.status);
+            if (data) {
+                if (data.status) stateManager.setStatus(data.status);
+                if (typeof data.listening === 'boolean') stateManager.setState({ isListening: data.listening });
             }
         } catch (error) {
             console.warn('Sync failed:', error.message);
