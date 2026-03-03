@@ -1,227 +1,247 @@
-# 🧠 AI-Based Voice-Enabled Intelligent System (Windows)
+# AI-Based Voice-Enabled Intelligent System Assistant
 
-A modular, production-ready AI voice assistant for Windows desktop automation.
-
-This system combines:
-
-- 🎙 Offline Speech-to-Text (Whisper)
-- 🔊 Offline Text-to-Speech (Piper)
-- ⚙ Agent-Based Automation Engine
-- 🧩 Tool Registry & Executor Architecture
-- 🖥 System + File + Application Automation
+An offline, voice-controlled Windows desktop automation system. Speak natural commands to manage files, control applications, send messages, and operate your system — all without cloud connectivity.
 
 ---
 
-## 🚀 Architecture Overview
+## The Problem
 
-Voice Input (Whisper - GPU)
-↓
-Audio Pipeline
-↓
-Assistant Controller
-↓
-Agent / Planner
-↓
-Tool Registry
-↓
-Automation Tool Execution
-↓
-Voice Response (Piper TTS)
+Existing voice assistants (Siri, Alexa, Google) require constant internet, send your data to the cloud, and can't deeply automate your desktop. Power users need a **private, offline, extensible** voice assistant that actually controls their machine.
 
+## The Solution
 
-The system is fully modular and designed for scalability and future LLM integration.
+A modular, agent-based voice assistant that runs **entirely on your local machine**:
+
+- **Whisper STT** transcribes speech offline (GPU-accelerated)
+- **Local LLM** (Ollama) understands intent and generates execution plans
+- **17+ automation tools** execute real OS-level actions
+- **Piper TTS** speaks results back naturally
+- Falls back to keyword matching when LLM is unavailable — always works
 
 ---
 
-## 📁 Project Structure
+## Architecture
 
+```
+Voice/Text ──► Whisper STT ──► Assistant Controller ──► LLM Client (Ollama / Keyword Fallback)
+                                       │
+                                       ▼
+                                 Execution Plan
+                                       │
+                                       ▼
+                              Multi-Step Executor ──► Tool Registry (17+ tools)
+                                       │
+                                       ▼
+                                 Automation Layer
+                          ┌────────┬────────┬──────────┐
+                          │ Files  │ System │ Apps     │
+                          │ Ops    │ Control│ WhatsApp │
+                          │        │ Volume │ Browser  │
+                          │        │ Power  │ Email    │
+                          └────────┴────────┴──────────┘
+                                       │
+                                       ▼
+                                Piper TTS ──► Voice Response
+```
+
+---
+
+## Features
+
+| Category | What You Can Do |
+|---|---|
+| **File Management** | Create, open, delete, move files & folders; file search; safe Recycle Bin deletion with undo history |
+| **System Control** | Volume up/down/mute, lock workstation, shutdown, restart (with confirmation) |
+| **WhatsApp** | Open WhatsApp Desktop, send messages to contacts, open specific chats |
+| **Browser** | Open URLs, Google search, YouTube — auto-formatted and validated |
+| **Applications** | Launch Chrome, Notepad, Calculator, and more |
+| **Email** | Send emails via SMTP with validation |
+| **Intelligence** | Multi-step planning, confidence scoring (0.0–1.0), parameter extraction & validation |
+| **Safety** | Confirmation prompts for dangerous actions, window detection, process verification, error recovery |
+
+### Command Examples
+
+```
+"Create file report.txt in Documents"
+"Delete folder OldProjects from Desktop"
+"Send hello to John on WhatsApp"
+"Volume up"
+"Lock my laptop"
+"Search for budget.xlsx"
+"Open youtube"
+```
+
+---
+
+## How It Works
+
+1. **Input** — Hold `SPACE` (push-to-talk) or press `CTRL+T` (text mode)
+2. **Transcribe** — Whisper converts audio to text
+3. **Understand** — LLM generates a structured execution plan (JSON with tool calls + parameters)
+4. **Validate** — Parameters are extracted, validated, and scored for confidence
+5. **Execute** — Multi-executor runs each step; high-risk actions require voice confirmation
+6. **Respond** — Piper TTS speaks the result
+
+### Confidence-Based Execution
+
+Every command is scored `0.0` to `1.0`:
+
+| Score | Action |
+|---|---|
+| **≥ 0.8** | Auto-execute |
+| **0.5 – 0.8** | Ask confirmation |
+| **0.3 – 0.5** | Request clarification |
+| **< 0.3** | Reject — ask to rephrase |
+
+---
+
+## Project Structure
+
+```
 backend/
-│
-├── voice_engine/ # STT, TTS, audio pipeline
-│ ├── input/
-│ ├── stt/
-│ ├── tts/
-│ └── audio_pipeline.py
-│
-├── automation/ # All automation tools
-│ ├── base_tool.py
-│ ├── system/
-│ ├── file/
-│ ├── whatsapp_desktop.py
-│ └── ...
-│
-├── core/ # Agent, Executor, Tool Registry
-│ ├── assistant_controller.py
-│ ├── agent.py
-│ ├── executor.py
-│ └── tool_registry.py
-│
-├── config/ # Logger & settings
-│
-└── data/ # Runtime storage (ignored in git)
-
+├── core/                  # Orchestration, parsing, execution, tool registry
+├── llm/                   # LLM client, parameter extraction & validation
+├── voice_engine/          # Whisper STT, Piper TTS, audio pipeline
+├── automation/            # All automation tools (files, system, apps, WhatsApp, email)
+├── memory/                # Session state & conversation history
+├── config/                # Logger, settings
+├── api_service.py         # Flask REST + WebSocket API for desktop UI
+└── app.py                 # Minimal CLI entry point
+desktop_1/                 # Desktop UI client
+tests/                     # 90+ tests with full mocking
+app.py                     # Main CLI voice loop
+```
 
 ---
 
-## 🎙 Voice Capabilities
+## Getting Started
 
-### ✅ Speech-to-Text
-- OpenAI Whisper (GPU enabled)
-- English-only transcription
-- Deterministic configuration
-- Push-to-talk support
+### Prerequisites
 
-### ✅ Text-to-Speech
-- Piper TTS (offline)
-- Custom tuning parameters:
-  - `length_scale`
-  - `noise_scale`
-  - `noise_w`
-- Runtime audio cleanup
+- **OS:** Windows 10/11
+- **Python:** 3.8+
+- **GPU:** NVIDIA (optional, speeds up Whisper)
+- **Ollama:** Optional — system works without it via keyword fallback
 
----
+### Installation
 
-## ⚙ Automation Capabilities
-
-### 🖥 System Control
-- Lock laptop
-- Shutdown
-- Restart
-- Volume up/down
-- Mute
-
-### 📂 File Operations
-- Open file
-- Create file
-- Delete file
-- Move file
-- Create folder
-- Delete folder
-- Search file
-
-### 📱 Application Automation
-- Open WhatsApp Desktop
-- Send WhatsApp message
-- Launch applications
-- Browser control
-
-All automation tools follow:
-
-BaseTool → ToolRegistry → Executor
-
-
-This allows easy addition of new tools without modifying core logic.
-
----
-
-## 🧩 Agent-Based Execution Model
-
-Each command is converted into:
-
-python
-ToolCall(
-    name="file.open",
-    args={"path": "C:/Users/..."}
-)
-Then executed through:
-
-Executor → ToolRegistry → Tool.execute()
-No hardcoded spaghetti IF-ELSE chains.
-
-🛠 Setup Instructions
-1️⃣ Clone Repository
-git clone https://github.com/your-repo-link
+```bash
+# Clone
+git clone https://github.com/your-repo/AI-Voice-Assistant.git
 cd AI-Based-Voice-Enabled-Intelligent-System-Assistant
-2️⃣ Create Virtual Environment
+
+# Virtual environment
 python -m venv venv
 venv\Scripts\activate
-3️⃣ Install Dependencies
-pip install -r requirements.txt
-4️⃣ Run Assistant
+
+# Dependencies
+pip install -r backend/requirements.txt
+```
+
+### Install Ollama (Optional)
+
+```bash
+# Download from https://ollama.ai, then:
+ollama pull qwen2.5:7b-instruct
+```
+
+> Without Ollama, the system uses built-in keyword matching — fully functional.
+
+### Configure Email (Optional)
+
+```bash
+set SMTP_HOST=smtp.gmail.com
+set SMTP_PORT=587
+set SMTP_USER=your-email@gmail.com
+set SMTP_PASSWORD=your-app-password
+```
+
+---
+
+## Running
+
+### Mode 1: CLI Voice Loop
+
+```bash
 python app.py
-🎮 Usage
-When running:
+```
 
-Hold SPACE → Voice input
+Hold `SPACE` to talk, `CTRL+T` to type. Say `exit` to quit.
 
-Press CTRL + T → Text input
+### Mode 2: Desktop UI + API Backend
 
-Say/type:
+```bash
+# Terminal 1 — Start backend API
+python backend/api_service.py
 
-"Open WhatsApp"
+# Terminal 2 — Run desktop client
+cd desktop_1
+python main.py
+```
 
-"Lock my laptop"
+The API exposes REST endpoints and WebSocket events for real-time communication:
 
-"Shutdown system"
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/status` | GET | Assistant status |
+| `/api/process_command` | POST | Send a text command |
+| `/api/start_listening` | POST | Start voice mode |
+| `/api/stop_listening` | POST | Stop voice mode |
+| `/api/confirm` | POST | Approve/reject pending action |
+| `/api/speak` | POST | Trigger TTS |
 
-"Create folder test in documents"
-
-"Send hello to Swayam on WhatsApp"
-
-Say:
-
-exit
-to terminate assistant.
-
-🧠 Design Principles
-Fully offline for core features
-
-Modular & production-ready
-
-Tool-based architecture
-
-Thread-safe ready
-
-LLM-integration ready
-
-Clean separation of concerns
-
-🔒 Security
-No cloud dependency for automation
-
-No remote command execution
-
-All operations run locally on Windows
-
-🏗 Future Improvements
-LLM-based intent parsing
-
-GUI dashboard
-
-Context memory
-
-Multi-step planning
-
-Advanced permission system
-
-👨‍💻 Authors
-Voice & Automation Core: Vansh Raghav
-
-LLM Integration: Team Member
-
-UI & Deployment: Team Member
-
-📌 Status
-Production-ready local automation system with scalable agent architecture.
-
+See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for full reference.
 
 ---
 
-# 🔥 This README Is:
+## Testing
 
-- Clean
-- Professional
-- Evaluator-friendly
-- Architecture-focused
-- Industry-level structured
+```bash
+# Install test dependencies
+pip install -r requirements-test.txt
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=backend --cov-report=html
+```
+
+**90+ tests** covering STT, TTS, intent parsing, file operations, tool registry, error handling, command parsing, confidence tracking — all fully mocked, no real side effects.
 
 ---
 
-If you want, I can also:
+## Tech Stack
 
-- Create a **high-impact GitHub landing header**
-- Add architecture diagram image
-- Make it more research-paper style
-- Or make it startup-style product README**
+| Component | Technology |
+|---|---|
+| Language | Python 3.8+ |
+| STT | OpenAI Whisper (offline, GPU) |
+| TTS | Piper TTS (offline) |
+| LLM | Ollama (Qwen 2.5 7B) + keyword fallback |
+| API | Flask + Flask-SocketIO |
+| Automation | pyautogui, keyboard, subprocess |
+| Testing | pytest, pytest-cov, pytest-mock |
 
-Tell me the vibe you want.
+---
+
+## Future Scope
+
+- **Contextual multi-turn conversations** — maintain deeper dialogue state across commands
+- **Plugin system** — allow third-party tool development and hot-loading
+- **GUI dashboard** — visual command history, analytics, and system monitoring
+- **Cross-platform support** — extend to macOS and Linux
+- **Advanced permission model** — role-based access control for shared environments
+- **Wake word detection** — hands-free activation without push-to-talk
+- **Multilingual support** — extend STT/TTS to other languages
+
+---
+
+## Authors
+
+- **Vansh Raghav** — Voice & Automation Core
+- Team Members — LLM Integration, UI & Deployment
+
+---
+
+> **Status:** Production-ready local automation system with scalable agent architecture.
