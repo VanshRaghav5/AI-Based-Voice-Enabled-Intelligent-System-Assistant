@@ -38,6 +38,9 @@ class ChatWindow(ctk.CTkFrame):
 
         self.setup_socket()
         self.attempt_connection()
+        
+        # Track processing timeout
+        self.processing_timeout_id = None
 
     def attempt_connection(self):
         """Try to connect to backend and update UI accordingly."""
@@ -63,16 +66,57 @@ class ChatWindow(ctk.CTkFrame):
             if not is_connected():
                 return
         
+        # Show user message
         self.add_message(cmd, sender="user")
         self.add_message("🤔 Assistant is thinking...", sender="thinking")
         
-        # Disable input during processing
+        # Clear and disable input
+        self.entry.delete(0, "end")
+        self.entry.update()  # Force UI update
         self.send_btn.configure(state="disabled", text="Processing...")
         self.entry.configure(state="disabled")
         self.status_bar.set_processing(True)
         
-        process_command(cmd)
-        self.entry.delete(0, "end")
+        # Set timeout to re-enable input if no response (30 seconds)
+        if self.processing_timeout_id:
+            self.after_cancel(self.processing_timeout_id)
+        self.processing_timeout_id = self.after(30000, self._on_processing_timeout)
+        
+        # Process command in background thread to avoid blocking UI
+        import threading
+        threading.Thread(target=self._process_command_async, args=(cmd,), daemon=True).start()
+    
+    def _process_command_async(self, cmd):
+        """Process command asynchronously to avoid blocking UI."""
+        try:
+            process_command(cmd)
+        except Exception as e:
+            # If HTTP request fails, emit error via socket (if backend is down, this won't work)
+            # So we also handle it locally
+            self.after(0, lambda: self._on_command_error(str(e)))
+    
+    def _on_command_error(self, error_msg):
+        """Handle command processing error."""
+        self.add_message(f"❌ Error: {error_msg}", sender="system")
+        self._reset_input_state()
+    
+    def _on_processing_timeout(self):
+        """Handle timeout if backend doesn't respond."""
+        self.add_message("⚠ Request timed out. Backend may be slow or unresponsive.", sender="system")
+        self._reset_input_state()
+    
+    def _reset_input_state(self):
+        """Reset input field and button to normal state."""
+        # Cancel timeout if active
+        if self.processing_timeout_id:
+            self.after_cancel(self.processing_timeout_id)
+            self.processing_timeout_id = None
+        
+        # Re-enable input
+        self.send_btn.configure(state="normal", text="Send")
+        self.entry.configure(state="normal")
+        self.entry.focus()
+        self.status_bar.set_processing(False)
 
     def toggle_listen(self):
         if not is_connected():
@@ -102,21 +146,13 @@ class ChatWindow(ctk.CTkFrame):
         def on_result(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
             self.add_message(msg, sender="assistant")
-            
-            # Re-enable input after processing
-            self.send_btn.configure(state="normal", text="Send")
-            self.entry.configure(state="normal")
-            self.status_bar.set_processing(False)
+            self._reset_input_state()
 
         @sio.on("error")
         def on_error(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
             self.add_message(f"❌ Error: {msg}", sender="system")
-            
-            # Re-enable input on error
-            self.send_btn.configure(state="normal", text="Send")
-            self.entry.configure(state="normal")
-            self.status_bar.set_processing(False)
+            self._reset_input_state()
     
         @sio.on("execution_step")
         def on_execution_step(data):
