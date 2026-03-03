@@ -35,6 +35,42 @@ pending_confirmation: Optional[Dict[str, Any]] = None
 listening_thread: Optional[threading.Thread] = None
 
 
+def emit_execution_steps(plan_data):
+    """Emit execution steps to connected clients.
+    
+    Args:
+        plan_data: The plan data containing steps to execute
+    """
+    if not plan_data or not isinstance(plan_data, dict):
+        return
+    
+    steps = plan_data.get('steps', [])
+    if not steps:
+        # Try alternative format
+        if 'tool_calls' in plan_data:
+            steps = plan_data['tool_calls']
+    
+    for i, step in enumerate(steps, 1):
+        step_desc = ""
+        if isinstance(step, dict):
+            tool = step.get('tool', step.get('name', ''))
+            params = step.get('parameters', step.get('params', {}))
+            step_desc = f"{tool}"
+            if params:
+                # Create readable description from params
+                param_str = ", ".join(f"{k}={v}" for k, v in list(params.items())[:2])
+                step_desc = f"{tool} ({param_str})"
+        else:
+            step_desc = str(step)
+        
+        socketio.emit('execution_step', {
+            'step': i,
+            'description': step_desc,
+            'status': 'running'
+        })
+        logger.info(f"[Execution] Step {i}: {step_desc}")
+
+
 # ============== REST API ENDPOINTS ==============
 
 @app.route('/api/status', methods=['GET'])
@@ -74,6 +110,15 @@ def process_command():
     
     try:
         logger.info(f"[API] Processing command: {command}")
+        
+        # Generate plan first to emit steps
+        plan_data = controller.llm_client.generate_plan(command)
+        
+        if plan_data and isinstance(plan_data, dict):
+            # Emit execution steps before processing
+            emit_execution_steps(plan_data)
+        
+        # Process the command (this will execute the plan)
         result = controller.process(command)
         
         # Check if confirmation is required
@@ -316,6 +361,14 @@ def voice_loop():
                 socketio.emit('assistant_shutdown', {'message': 'Shutting down'})
                 speak("Shutting down.")
                 break
+            
+            # Process the command
+            # Generate plan first to emit steps
+            plan_data = controller.llm_client.generate_plan(text)
+            
+            if plan_data and isinstance(plan_data, dict):
+                # Emit execution steps before processing
+                emit_execution_steps(plan_data)
             
             # Process the command
             result = controller.process(text)
