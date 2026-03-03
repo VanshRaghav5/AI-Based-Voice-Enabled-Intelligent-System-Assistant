@@ -2,6 +2,7 @@ import customtkinter as ctk
 from services.api_client import process_command, start_listening, stop_listening
 from services.socket_client import sio, connect, is_connected
 from ui.confirmation_popup import show_confirmation
+from ui.status_bar import StatusBar
 
 class ChatWindow(ctk.CTkFrame):
     def __init__(self, master):
@@ -29,8 +30,9 @@ class ChatWindow(ctk.CTkFrame):
         self.listen_btn = ctk.CTkButton(controls_frame, text="Start Listening", command=self.toggle_listen)
         self.listen_btn.pack(side="left", padx=5)
 
-        self.status_label = ctk.CTkLabel(controls_frame, text="⚠ Disconnected", text_color="orange")
-        self.status_label.pack(side="right", padx=5)
+        # Professional status bar at bottom
+        self.status_bar = StatusBar(self)
+        self.status_bar.pack(side="bottom", fill="x")
 
         self.listening = False
 
@@ -41,10 +43,10 @@ class ChatWindow(ctk.CTkFrame):
         """Try to connect to backend and update UI accordingly."""
         success = connect()
         if success:
-            self.status_label.configure(text="✓ Connected", text_color="green")
+            self.status_bar.set_connected(True)
             self.add_message("✓ Connected to backend. Ready to assist!", sender="system")
         else:
-            self.status_label.configure(text="⚠ Backend not running", text_color="red")
+            self.status_bar.set_connected(False)
             self.add_message(
                 "⚠ Cannot connect to backend.\nPlease start the backend server first:\n> python backend\\api_service.py",
                 sender="system"
@@ -62,6 +64,7 @@ class ChatWindow(ctk.CTkFrame):
                 return
         
         self.add_message(cmd, sender="user")
+        self.status_bar.set_processing(True)  # Show processing state
         process_command(cmd)
         self.entry.delete(0, "end")
 
@@ -74,10 +77,12 @@ class ChatWindow(ctk.CTkFrame):
         if not self.listening:
             start_listening()
             self.listen_btn.configure(text="Stop Listening", fg_color="red")
+            self.status_bar.set_listening(True)
             self.add_message("🎤 Listening started...", sender="system")
         else:
             stop_listening()
             self.listen_btn.configure(text="Start Listening", fg_color="#1f6aa5")
+            self.status_bar.set_listening(False)
             self.add_message("🎤 Listening stopped.", sender="system")
         self.listening = not self.listening
 
@@ -91,11 +96,13 @@ class ChatWindow(ctk.CTkFrame):
         def on_result(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
             self.add_message(msg, sender="assistant")
+            self.status_bar.set_processing(False)  # Clear processing state
 
         @sio.on("error")
         def on_error(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
             self.add_message(f"❌ Error: {msg}", sender="system")
+            self.status_bar.set_processing(False)  # Clear processing state on error
     
         @sio.on("confirmation_required")
         def on_confirm(data):
@@ -105,6 +112,7 @@ class ChatWindow(ctk.CTkFrame):
         @sio.on("listening_status")
         def on_listening_status(data):
             is_listening = data.get('listening', False)
+            self.status_bar.set_listening(is_listening)
             if is_listening:
                 self.listen_btn.configure(text="Stop Listening", fg_color="red")
                 self.listening = True
@@ -114,12 +122,14 @@ class ChatWindow(ctk.CTkFrame):
         
         @sio.on("connect")
         def on_connect():
-            self.status_label.configure(text="✓ Connected", text_color="green")
+            self.status_bar.set_connected(True)
             self.add_message("✓ Reconnected to backend.", sender="system")
         
         @sio.on("disconnect")
         def on_disconnect():
-            self.status_label.configure(text="⚠ Disconnected", text_color="orange")
+            self.status_bar.set_connected(False)
+            self.status_bar.set_listening(False)
+            self.status_bar.set_processing(False)
             self.add_message("⚠ Disconnected from backend.", sender="system")
     
     def add_message(self, text, sender="assistant"):
