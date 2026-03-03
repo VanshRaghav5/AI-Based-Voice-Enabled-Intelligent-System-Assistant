@@ -64,7 +64,13 @@ class ChatWindow(ctk.CTkFrame):
                 return
         
         self.add_message(cmd, sender="user")
-        self.status_bar.set_processing(True)  # Show processing state
+        self.add_message("🤔 Assistant is thinking...", sender="thinking")
+        
+        # Disable input during processing
+        self.send_btn.configure(state="disabled", text="Processing...")
+        self.entry.configure(state="disabled")
+        self.status_bar.set_processing(True)
+        
         process_command(cmd)
         self.entry.delete(0, "end")
 
@@ -96,14 +102,38 @@ class ChatWindow(ctk.CTkFrame):
         def on_result(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
             self.add_message(msg, sender="assistant")
-            self.status_bar.set_processing(False)  # Clear processing state
+            
+            # Re-enable input after processing
+            self.send_btn.configure(state="normal", text="Send")
+            self.entry.configure(state="normal")
+            self.status_bar.set_processing(False)
 
         @sio.on("error")
         def on_error(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
             self.add_message(f"❌ Error: {msg}", sender="system")
-            self.status_bar.set_processing(False)  # Clear processing state on error
+            
+            # Re-enable input on error
+            self.send_btn.configure(state="normal", text="Send")
+            self.entry.configure(state="normal")
+            self.status_bar.set_processing(False)
     
+        @sio.on("execution_step")
+        def on_execution_step(data):
+            """Handle individual step execution in multi-step plans."""
+            step_num = data.get('step', '')
+            step_desc = data.get('description', str(data))
+            status = data.get('status', 'running')  # running, success, failed
+            
+            if status == 'success':
+                icon = "✅"
+            elif status == 'failed':
+                icon = "❌"
+            else:
+                icon = "🔹"
+            
+            self.add_message(f"{icon} Step {step_num}: {step_desc}", sender="step")
+        
         @sio.on("confirmation_required")
         def on_confirm(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
@@ -137,7 +167,7 @@ class ChatWindow(ctk.CTkFrame):
         
         Args:
             text: The message text to display
-            sender: One of 'user', 'assistant', or 'system'
+            sender: One of 'user', 'assistant', 'system', 'thinking', or 'step'
         """
         # Create container frame for alignment
         container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
@@ -172,6 +202,40 @@ class ChatWindow(ctk.CTkFrame):
                 wraplength=400,
                 padx=15,
                 pady=10
+            )
+            label.pack()
+            
+        elif sender == "thinking":
+            # Thinking indicator: purple bubble, centered, smaller
+            bubble = ctk.CTkFrame(container, fg_color="#4a148c", corner_radius=10)
+            bubble.pack(anchor="center", padx=10)
+            
+            label = ctk.CTkLabel(
+                bubble,
+                text=text,
+                text_color="#ce93d8",
+                justify="center",
+                wraplength=400,
+                padx=12,
+                pady=6,
+                font=("Arial", 11, "italic")
+            )
+            label.pack()
+            
+        elif sender == "step":
+            # Execution step: light gray bubble, left-aligned, compact
+            bubble = ctk.CTkFrame(container, fg_color="#1f1f1f", corner_radius=8)
+            bubble.pack(anchor="w", padx=30)
+            
+            label = ctk.CTkLabel(
+                bubble,
+                text=text,
+                text_color="#90CAF9",
+                justify="left",
+                wraplength=450,
+                padx=10,
+                pady=5,
+                font=("Arial", 10)
             )
             label.pack()
             
