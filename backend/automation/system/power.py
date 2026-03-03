@@ -3,6 +3,8 @@
 import ctypes
 import os
 from backend.automation.base_tool import BaseTool
+from backend.automation.error_handler import error_handler, AutomationError
+from backend.config.logger import logger
 
 
 class SystemLockTool(BaseTool):
@@ -12,21 +14,38 @@ class SystemLockTool(BaseTool):
     requires_confirmation = False
 
     def execute(self):
-        try:
-            ctypes.windll.user32.LockWorkStation()
-
-            return {
-                "status": "success",
-                "message": "System locked",
-                "data": {}
-            }
-
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": str(e),
-                "data": {}
-            }
+        """Lock Windows system with error handling"""
+        
+        def _lock():
+            logger.info("Attempting to lock system")
+            
+            try:
+                result = ctypes.windll.user32.LockWorkStation()
+                
+                if result == 0:
+                    raise AutomationError(
+                        "LockWorkStation returned 0",
+                        "Failed to lock the system. Please try pressing Windows+L manually."
+                    )
+                
+                return {
+                    "status": "success",
+                    "message": "System locked successfully",
+                    "data": {}
+                }
+                
+            except Exception as e:
+                logger.error(f"System lock failed: {e}")
+                raise AutomationError(
+                    str(e),
+                    "I couldn't lock the system. Try pressing Windows+L on your keyboard."
+                )
+        
+        return error_handler.wrap_automation(
+            func=_lock,
+            operation_name="Lock System",
+            context={"operation": "lock"}
+        )
 
 
 class SystemShutdownTool(BaseTool):
@@ -36,21 +55,38 @@ class SystemShutdownTool(BaseTool):
     requires_confirmation = True
 
     def execute(self):
-        try:
-            os.system("shutdown /s /t 0")
-
-            return {
-                "status": "success",
-                "message": "Shutting down system",
-                "data": {}
-            }
-
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": str(e),
-                "data": {}
-            }
+        """Shutdown system with error handling"""
+        
+        def _shutdown():
+            logger.warning("Initiating system shutdown via tool")
+            
+            try:
+                result = os.system("shutdown /s /t 0")
+                
+                if result != 0:
+                    raise AutomationError(
+                        f"Shutdown command failed with code {result}",
+                        "Failed to shutdown. You may need administrator privileges."
+                    )
+                
+                return {
+                    "status": "success",
+                    "message": "Shutting down system now",
+                    "data": {}
+                }
+                
+            except Exception as e:
+                logger.error(f"Shutdown failed: {e}")
+                raise AutomationError(
+                    str(e),
+                    "I couldn't shutdown the system. Administrator privileges may be required."
+                )
+        
+        return error_handler.wrap_automation(
+            func=_shutdown,
+            operation_name="System Shutdown",
+            context={"operation": "shutdown"}
+        )
 
 
 class SystemRestartTool(BaseTool):
@@ -60,18 +96,35 @@ class SystemRestartTool(BaseTool):
     requires_confirmation = True
 
     def execute(self):
-        try:
-            os.system("shutdown /r /t 0")
-
-            return {
-                "status": "success",
-                "message": "Restarting system",
-                "data": {}
-            }
-
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": str(e),
-                "data": {}
-            }
+        """Restart system with error handling"""
+        
+        def _restart():
+            logger.warning("Initiating system restart via tool")
+            
+            try:
+                result = os.system("shutdown /r /t 0")
+                
+                if result != 0:
+                    raise AutomationError(
+                        f"Restart command failed with code {result}",
+                        "Failed to restart. You may need administrator privileges."
+                    )
+                
+                return {
+                    "status": "success",
+                    "message": "Restarting system now",
+                    "data": {}
+                }
+                
+            except Exception as e:
+                logger.error(f"Restart failed: {e}")
+                raise AutomationError(
+                    str(e),
+                    "I couldn't restart the system. Administrator privileges may be required."
+                )
+        
+        return error_handler.wrap_automation(
+            func=_restart,
+            operation_name="System Restart",
+            context={"operation": "restart"}
+        )
