@@ -880,21 +880,113 @@ You should see: Assistant ready. Hold SPACE to talk or press CTRL+T to type.
 
 ## 🚀 Running the Integrated System
 
-The system can be run in two modes:
+The system can be run in **three modes**:
 
-### Mode 1: Standalone CLI (Traditional)
+### Mode 1: Standalone CLI (Voice Loop)
 ```bash
 cd backend
 python app.py
 ```
-Use this for voice-controlled automation via command line.
+Traditional voice-controlled automation via command line. Press SPACE to talk, CTRL+T for text input.
 
-### Mode 2: Desktop UI with API Backend (Recommended)
+### Mode 2: Desktop UI with API Backend (NEW - Real-time Integration)
 
-For the full integrated experience with the Electron desktop interface:
+**Full-featured desktop integration with WebSocket real-time updates.**
 
-#### Step 1: Start the Backend API Server
+#### Step 1: Start the Backend API Service
 From the project root directory:
+```bash
+python backend/api_service.py
+```
+
+The API service provides:
+- **REST API Endpoints** - Process commands, control listening, manage confirmations
+- **WebSocket Events** - Real-time voice input, command results, status updates
+- **Health Monitoring** - Service health checks and status reporting
+
+You should see:
+```
+API Service starting on http://0.0.0.0:5000
+Available endpoints:
+  GET  /api/health - Health check
+  GET  /api/status - Get current status
+  POST /api/process_command - Process text command
+  POST /api/start_listening - Start voice listening
+  POST /api/stop_listening - Stop voice listening
+  POST /api/confirm - Confirm/reject pending action
+  POST /api/speak - Make assistant speak
+```
+
+#### Step 2: Run the Example Desktop Integration (Console)
+In a new terminal:
+```bash
+python desktop/example_integration.py
+```
+
+This demonstrates:
+- ✅ Real-time connection to backend API
+- ✅ WebSocket event handling
+- ✅ Voice transcription display
+- ✅ Command result updates
+- ✅ Confirmation dialog handling
+- ✅ Start/stop listening controls
+
+#### Step 3: Build Your Custom Desktop UI
+
+Use the `BackendClient` class in your GUI framework (Electron, PyQt, Tkinter, etc.):
+
+```python
+from desktop.services.backend_client import BackendClient
+
+# Initialize client
+client = BackendClient("http://localhost:5000")
+
+# Register callbacks for real-time updates
+def on_voice_input(data):
+    # Update UI with transcribed text
+    ui.update_transcription(data['text'])
+
+def on_command_result(data):
+    # Update UI with command result
+    ui.show_result(data['message'], data['status'])
+
+def on_confirmation_required(data):
+    # Show confirmation dialog
+    approved = ui.show_confirmation_dialog(data['message'])
+    client.confirm_action(approved)
+
+client.register_callback('on_voice_input', on_voice_input)
+client.register_callback('on_command_result', on_command_result)
+client.register_callback('on_confirmation_required', on_confirmation_required)
+
+# Connect to backend
+client.connect()
+
+# Send commands
+client.start_listening()  # Start voice mode
+client.process_command("open notepad")  # Send text command
+client.stop_listening()  # Stop voice mode
+```
+
+**Desktop Integration Features:**
+- 🎤 **Real-time voice transcription** - See what you said instantly
+- ⚡ **Live command results** - Updates appear immediately via WebSocket
+- ✅ **Interactive confirmations** - GUI dialogs for critical actions
+- 🔄 **Bidirectional communication** - Desktop ↔ Backend sync
+- 📊 **Status monitoring** - Track listening state, pending confirmations
+- 🎯 **Event-driven architecture** - No polling, instant updates
+
+#### Desktop API Client Documentation
+See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for complete API reference including:
+- All REST endpoints with examples
+- WebSocket events and payloads
+- Error handling patterns
+- Code examples in Python and JavaScript
+- Integration workflows
+
+### Mode 3: Legacy FastAPI (If Applicable)
+
+If you're using the older FastAPI backend:
 ```bash
 uvicorn backend.api:app --host 0.0.0.0 --port 8000
 ```
@@ -906,30 +998,27 @@ The API server provides:
 - `/logs` - Execution logs from backend
 - `/config/listening` - Toggle always-listening mode
 
-You should see: `INFO:     Uvicorn running on http://0.0.0.0:8000`
+---
 
-#### Step 2: Start the Desktop UI
-In a new terminal:
-```bash
-cd desktop
-npm install  # Only needed first time
-npm start
+## 🔌 Desktop Integration Architecture
+
+```
+┌─────────────────┐         WebSocket/REST          ┌──────────────────┐
+│   Desktop UI    │ ◄─────────────────────────────► │  Backend API     │
+│   (Electron/    │                                  │  Service         │
+│   PyQt/etc.)    │   Real-time Events:              │  (Flask +        │
+│                 │   • voice_input                  │   SocketIO)      │
+│  - Start/Stop   │   • command_result               │                  │
+│  - Transcripts  │   • confirmation_required        │  - Process cmds  │
+│  - Results      │   • listening_status             │  - Voice loop    │
+│  - Confirmations│                                  │  - Confirmations │
+└─────────────────┘                                  └──────────────────┘
 ```
 
-The Electron app will launch and automatically connect to the backend API.
-
-#### Step 3: Control the Assistant
-- Use the **Start** button in the Control Panel to launch the assistant
-- Use the **Stop** button to terminate the assistant
-- View real-time execution logs in the Log Panel (syncs every 5 seconds)
-- Toggle always-listening mode via the UI
-
-#### Step 4: Monitor System Status
-- **Status Indicator** shows current state: IDLE, STARTING, ACTIVE, STOPPING, ERROR
-- **Network Mode** displays backend connection status
-- **Log Panel** shows both UI events and backend execution logs
-
-**Note:** The backend API server must be running for the desktop UI to function. If the backend is not reachable, the UI will display "OFFLINE" status and retry automatically.
+**Key Integration Points:**
+1. **BackendClient** (`desktop/services/backend_client.py`) - Python client library
+2. **API Service** (`backend/api_service.py`) - Flask backend with REST + WebSocket
+3. **Example Integration** (`desktop/example_integration.py`) - Working console example
 
 📖 Usage Guide
 Basic Operation
