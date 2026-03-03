@@ -8,6 +8,47 @@ class ChatWindow(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
 
+        # Top bar with memory/settings indicator
+        top_bar = ctk.CTkFrame(self, fg_color="transparent", height=40)
+        top_bar.pack(fill="x", padx=10, pady=(10, 0))
+        
+        # Memory indicator on the right
+        self.memory_indicator = ctk.CTkFrame(top_bar, fg_color="#1f1f1f", corner_radius=8)
+        self.memory_indicator.pack(side="right")
+        
+        # Memory status
+        memory_label = ctk.CTkLabel(
+            self.memory_indicator,
+            text="💾 Memory: ON",
+            text_color="#4CAF50",
+            font=("Arial", 10, "bold"),
+            padx=8,
+            pady=2
+        )
+        memory_label.grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        
+        # Persona
+        persona_label = ctk.CTkLabel(
+            self.memory_indicator,
+            text="🎭 Persona: Friendly",
+            text_color="#90CAF9",
+            font=("Arial", 10),
+            padx=8,
+            pady=2
+        )
+        persona_label.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        
+        # Language
+        language_label = ctk.CTkLabel(
+            self.memory_indicator,
+            text="🌐 Language: Hinglish",
+            text_color="#FFA726",
+            font=("Arial", 10),
+            padx=8,
+            pady=2
+        )
+        language_label.grid(row=0, column=2, padx=5, pady=2, sticky="w")
+
         # Scrollable frame for chat bubbles
         self.chat_scroll = ctk.CTkScrollableFrame(self, fg_color="#1a1a1a")
         self.chat_scroll.pack(fill="both", expand=True, padx=10, pady=10)
@@ -41,6 +82,44 @@ class ChatWindow(ctk.CTkFrame):
         
         # Track processing timeout
         self.processing_timeout_id = None
+        
+        # Store memory indicator labels for updates
+        self.memory_label = memory_label
+        self.persona_label = persona_label
+        self.language_label = language_label
+
+    def update_memory_status(self, enabled: bool):
+        """Update memory indicator status.
+        
+        Args:
+            enabled: True if memory is enabled, False otherwise
+        """
+        if enabled:
+            self.memory_label.configure(
+                text="💾 Memory: ON",
+                text_color="#4CAF50"
+            )
+        else:
+            self.memory_label.configure(
+                text="💾 Memory: OFF",
+                text_color="#888888"
+            )
+    
+    def update_persona(self, persona: str):
+        """Update persona indicator.
+        
+        Args:
+            persona: Persona name (e.g., 'Friendly', 'Professional', 'Concise')
+        """
+        self.persona_label.configure(text=f"🎭 Persona: {persona}")
+    
+    def update_language(self, language: str):
+        """Update language indicator.
+        
+        Args:
+            language: Language name (e.g., 'English', 'Hindi', 'Hinglish')
+        """
+        self.language_label.configure(text=f"🌐 Language: {language}")
 
     def attempt_connection(self):
         """Try to connect to backend and update UI accordingly."""
