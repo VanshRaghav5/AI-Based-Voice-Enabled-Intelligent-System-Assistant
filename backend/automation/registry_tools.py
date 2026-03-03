@@ -1,6 +1,7 @@
 # backend/automation/registry_tools.py
 
-from backend.automation.whatsapp_desktop import WhatsAppSendTool
+from backend.automation.whatsapp_desktop import WhatsAppSendTool, WhatsAppOpenTool, WhatsAppOpenChatTool
+from backend.automation.email_tool import EmailSendTool
 
 from backend.automation.system.volume import (
     VolumeUpTool,
@@ -32,6 +33,9 @@ from backend.automation.file.file_search import FileSearchTool
 
 def register_all_tools(registry):
     registry.register(WhatsAppSendTool())
+    registry.register(WhatsAppOpenTool())
+    registry.register(WhatsAppOpenChatTool())
+    registry.register(EmailSendTool())
 
     registry.register(VolumeUpTool())
     registry.register(VolumeDownTool())

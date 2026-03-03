@@ -1,12 +1,38 @@
-fastapi
-uvicorn
+# Core API Framework
+fastapi>=0.100.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
 
-# Audio recording
-sounddevice
-scipy
+# API Service (Alternative to FastAPI for desktop integration)
+flask>=2.3.0
+flask-socketio>=5.3.0
+flask-cors>=4.0.0
+python-socketio>=5.9.0
+requests>=2.31.0
 
-# Speech-to-Text
-openai-whisper
+# Audio recording and processing
+sounddevice>=0.4.5
+scipy>=1.10.0
+numpy>=1.24.0
 
-# Utility
-numpy
+# Speech-to-Text (Whisper)
+openai-whisper>=20240314
+torch>=2.0.0  # Required for Whisper
+
+# Text-to-Speech
+piper-tts>=1.0.0  # Optional: if using piper TTS
+
+# Automation and System Control
+keyboard>=0.13.5
+pyautogui>=0.9.53
+send2trash>=1.8.2
+pygetwindow>=0.0.9
+psutil>=5.9.5
+
+# Utilities
+pydantic>=2.0.0  # For data validation
+python-dotenv>=1.0.0  # For environment variables
+
+# Logging and monitoring
+python-json-logger>=2.0.4  # Optional: for better logging
+
