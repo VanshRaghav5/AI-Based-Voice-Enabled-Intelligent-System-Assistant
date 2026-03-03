@@ -5,6 +5,15 @@ This service exposes REST API endpoints and WebSocket connections
 to allow the desktop application to interact with the backend functionality.
 """
 
+import sys
+import os
+from pathlib import Path
+
+# Add project root to Python path to support running from any directory
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
