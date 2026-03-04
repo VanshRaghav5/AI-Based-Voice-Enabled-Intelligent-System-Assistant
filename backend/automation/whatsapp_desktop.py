@@ -2,6 +2,7 @@
 
 import subprocess
 import time
+import pyperclip
 from backend.automation.base_tool import BaseTool
 from backend.automation.window_detection import window_detector
 from backend.automation.error_handler import error_handler, WindowNotFoundError, AutomationTimeoutError, AutomationError
@@ -17,98 +18,85 @@ def send_whatsapp_message(target: str, message: str):
     Send WhatsApp message with proper workflow:
     1. Open WhatsApp
     2. Verify window is active
-    3. Search contact
+    3. Search contact via clipboard paste
     4. Open chat
-    5. Type message
+    5. Type message via clipboard paste
     6. Send
     """
-    
+    import keyboard
+    import pyautogui
+
     try:
         # Open WhatsApp
         logger.info(f"Opening WhatsApp to send message to {target}")
         subprocess.Popen("start whatsapp:", shell=True)
         time.sleep(3)
-        
+
         # Wait for WhatsApp window to appear
         if not window_detector.wait_for_window("WhatsApp", timeout=10):
             raise WindowNotFoundError(
                 "WhatsApp window not found after opening",
                 "I couldn't find the WhatsApp window. Please make sure WhatsApp is installed and try again."
             )
-        
-        # Give additional time for full load
+
         time.sleep(2)
-        
+
         # Ensure WhatsApp window is focused
         if not window_detector.focus_window("WhatsApp"):
             logger.warning("Could not focus WhatsApp window, continuing anyway")
-        
-        # Import automation libraries
-        try:
-            import keyboard
-            import pyautogui
-        except ImportError as e:
-            logger.error(f"Required automation libraries not available: {e}")
-            raise AutomationError(
-                f"Missing automation library: {e}",
-                "The automation tools are not properly installed. Please contact support."
-            )
-        
+
+        time.sleep(0.5)
+
         # Open search dialog
-        logger.debug("Opening search dialog")
+        logger.info(f"Searching for contact: {target}")
         keyboard.press_and_release("ctrl+f")
         time.sleep(1)
-        
+
         # Clear any existing search text
         keyboard.press_and_release("ctrl+a")
-        time.sleep(0.3)
+        time.sleep(0.2)
         keyboard.press_and_release("delete")
-        time.sleep(0.3)
-        
-        # Type contact name with error handling
-        logger.debug(f"Searching for contact: {target}")
-        try:
-            pyautogui.typewrite(target, interval=0.05)
-        except Exception as e:
-            logger.error(f"Error typing contact name: {e}")
-            # Fallback to keyboard typing
-            keyboard.write(target)
-        
+        time.sleep(0.2)
+
+        # Paste contact name via clipboard (handles all characters)
+        pyperclip.copy(target)
+        keyboard.press_and_release("ctrl+v")
         time.sleep(1.5)
-        
-        # Press Enter to select contact
+
+        # Press Enter to open the contact's chat
         keyboard.press_and_release("enter")
-        time.sleep(2)  # Wait for chat to open
-        
-        # Click in message area to ensure focus
-        try:
-            pyautogui.click(640, 400)
-            time.sleep(0.5)
-        except Exception as e:
-            logger.warning(f"Could not click message area: {e}")
-        
-        # Type the message
-        if message:
-            logger.debug("Typing message")
-            try:
-                pyautogui.typewrite(message, interval=0.02)
-            except Exception as e:
-                logger.error(f"Error typing message with pyautogui: {e}")
-                # Fallback to keyboard
-                keyboard.write(message)
-            
-            time.sleep(0.5)
-        else:
-            logger.warning("No message content provided")
-            raise ValueError("Message content is required")
-        
-        # Send message with Enter
-        logger.debug("Sending message")
+        time.sleep(2)
+
+        # Press Escape to close search and land in the chat, then Tab to message box
+        keyboard.press_and_release("escape")
+        time.sleep(0.5)
+
+        # Click at bottom-center to focus message input box
+        # Use a relative position: bottom 10% of screen, horizontal center
+        screen_w, screen_h = pyautogui.size()
+        msg_x = screen_w // 2
+        msg_y = int(screen_h * 0.93)
+        logger.info(f"Clicking message input at ({msg_x}, {msg_y})")
+        pyautogui.click(msg_x, msg_y)
+        time.sleep(0.5)
+
+        # Clear any existing text in message box
+        keyboard.press_and_release("ctrl+a")
+        time.sleep(0.2)
+
+        # Paste message via clipboard (handles unicode, emojis, special chars)
+        logger.info(f"Typing message: {message}")
+        pyperclip.copy(message)
+        keyboard.press_and_release("ctrl+v")
+        time.sleep(0.5)
+
+        # Send message
+        logger.info("Sending message...")
         keyboard.press_and_release("enter")
         time.sleep(1)
-        
-        logger.info(f"Successfully sent WhatsApp message to {target}")
-        
+
+        logger.info(f"Successfully sent WhatsApp message to {target}: '{message}'")
+
     except (WindowNotFoundError, AutomationTimeoutError) as e:
         logger.error(f"WhatsApp automation error: {e}")
         raise
@@ -193,9 +181,8 @@ class WhatsAppDesktop:
             window_detector.focus_window("WhatsApp")
             time.sleep(0.5)
 
-            # Open search and type contact name
+            # Open search and paste contact name via clipboard (handles all chars)
             import keyboard
-            import pyautogui
 
             keyboard.press_and_release("ctrl+f")
             time.sleep(0.5)
@@ -203,12 +190,10 @@ class WhatsAppDesktop:
             time.sleep(0.2)
             keyboard.press_and_release("delete")
             time.sleep(0.2)
-            
-            try:
-                pyautogui.typewrite(target, interval=0.05)
-            except:
-                keyboard.write(target)
-            
+
+            pyperclip.copy(target)
+            keyboard.press_and_release("ctrl+v")
+
             time.sleep(0.8)
             keyboard.press_and_release("enter")
             time.sleep(1.2)

@@ -1,5 +1,6 @@
 import subprocess
 import os
+from backend.automation.base_tool import BaseTool
 from backend.automation.error_handler import error_handler, AutomationError
 from backend.automation.window_detection import window_detector
 from backend.config.logger import logger
@@ -79,3 +80,18 @@ def open_app(app_name: str) -> dict:
         operation_name="Open Application",
         context={"app": app_name}
     )
+
+
+# =====================================================
+# Tool Class for Registry Integration
+# =====================================================
+
+class AppLauncherTool(BaseTool):
+    name = "app.open"
+    description = "Open desktop application (Chrome, Notepad, Calculator)"
+    risk_level = "low"
+    requires_confirmation = False
+
+    def execute(self, app_name: str):
+        """Open application by name"""
+        return open_app(app_name)

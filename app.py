@@ -1,6 +1,8 @@
 from backend.core.assistant_controller import AssistantController
 from backend.voice_engine.audio_pipeline import listen, speak
 from backend.config.logger import logger
+from backend.config.settings import EXIT_COMMANDS
+from backend.core.persona import persona
 
 
 controller = AssistantController()
@@ -15,9 +17,9 @@ def get_confirmation(message: str) -> bool:
     Returns:
         True if user says yes, False if user says no.
     """
-    # Speak the confirmation message
-    speak(message)
-    speak("Say yes to confirm or no to cancel.")
+    # Speak confirmation in selected persona style
+    speak(persona.stylize_response(message, status="confirmation_required"))
+    speak(persona.confirmation_instruction())
     
     # Listen for confirmation
     try:
@@ -51,10 +53,37 @@ def run_forever():
             normalized = text.lower().strip()
 
             # ---- EXIT CONDITION ----
-            if normalized in ["exit", "quit", "shutdown", "stop assistant"]:
-                speak("Shutting down. Goodbye.")
+            if normalized in [command.lower().strip() for command in EXIT_COMMANDS]:
+                speak(persona.shutdown_message())
                 logger.info("Assistant terminated by user.")
                 break
+
+            # ---- PERSONA SWITCHING ----
+            if "switch persona" in normalized or "change persona" in normalized:
+                from backend.config.assistant_config import assistant_config
+                
+                # Extract persona name from command
+                available_personas = ["butler", "professional", "friendly", "concise"]
+                new_persona = None
+                
+                for persona_name in available_personas:
+                    if persona_name in normalized:
+                        new_persona = persona_name
+                        break
+                
+                if new_persona:
+                    # Update config and reload persona
+                    if assistant_config.set("assistant.active_persona", new_persona):
+                        persona.reload()
+                        speak(persona.stylize_response(f"Persona switched to {new_persona}", status="success"))
+                        logger.info(f"[App] Switched persona to: {new_persona}")
+                    else:
+                        speak(persona.stylize_response("Failed to switch persona", status="error"))
+                else:
+                    # List available personas
+                    personas_list = ", ".join(available_personas)
+                    speak(persona.stylize_response(f"Available personas are: {personas_list}", status="info"))
+                continue
 
             # ---- PROCESS COMMAND ----
             result = controller.process(text)
@@ -64,7 +93,7 @@ def run_forever():
 
             # ---- SAFETY CHECKS ----
             if not isinstance(result, dict):
-                speak("Unexpected controller response.")
+                speak(persona.stylize_response("Unexpected controller response.", status="error"))
                 continue
 
             # ---- HANDLE CONFIRMATION REQUIRED ----
@@ -83,15 +112,15 @@ def run_forever():
             if not response or not response.strip():
                 response = "I understood your command, but I have no reply yet."
 
-            speak(response)
+            speak(persona.stylize_response(response, status=result.get("status", "info")))
 
         except KeyboardInterrupt:
-            speak("Interrupted. Goodbye.")
+            speak(persona.interrupted_message())
             break
 
         except Exception as e:
             logger.error(f"[App Error] {e}")
-            speak("An error occurred.")
+            speak(persona.error_message())
 
 
 if __name__ == "__main__":
