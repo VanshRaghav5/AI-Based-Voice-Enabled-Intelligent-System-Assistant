@@ -21,6 +21,10 @@ pyautogui>=0.9.53
 send2trash>=1.8.2
 pygetwindow>=0.0.9
 psutil>=5.9.5
+pyperclip>=1.8.2
+Pillow>=10.0.0
+screen-brightness-control>=0.21.0
+winshell>=0.6
 
 # Utilities
 pydantic>=2.0.0  # For data validation
