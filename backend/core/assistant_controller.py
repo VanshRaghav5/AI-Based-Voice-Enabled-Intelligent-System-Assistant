@@ -12,8 +12,8 @@ class AssistantController:
 
     def __init__(self):
         """Initialize the assistant controller with core components."""
-        # Initialize LLM client with qwen model
-        self.llm_client = LLMClient(model="voice-assistant")
+        # Initialize LLM client with configured/default model
+        self.llm_client = LLMClient()
         
         # Initialize registry and tool executor
         self.registry = ToolRegistry()

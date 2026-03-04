@@ -7,7 +7,8 @@ import scipy.io.wavfile as wav
 from backend.config.settings import (
     TTS_LENGTH_SCALE,
     TTS_NOISE_SCALE,
-    TTS_NOISE_W
+    TTS_NOISE_W,
+    TTS_TIMEOUT_SECONDS,
 )
 from backend.config.logger import logger
 
@@ -58,7 +59,7 @@ def speak_text(text: str) -> str:
             text=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            timeout=30
+            timeout=TTS_TIMEOUT_SECONDS
         )
 
         rate, audio = wav.read(output_file)

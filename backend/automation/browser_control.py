@@ -1,4 +1,5 @@
 import webbrowser
+from backend.automation.base_tool import BaseTool
 from backend.automation.error_handler import error_handler, AutomationError
 from backend.config.logger import logger
 
@@ -129,3 +130,40 @@ def open_youtube() -> dict:
         operation_name="Open YouTube",
         context={"app": "Browser"}
     )
+
+
+# =====================================================
+# Tool Classes for Registry Integration
+# =====================================================
+
+class BrowserOpenURLTool(BaseTool):
+    name = "browser.open_url"
+    description = "Open a URL in default browser"
+    risk_level = "low"
+    requires_confirmation = False
+
+    def execute(self, url: str):
+        """Open URL in browser"""
+        return open_url(url)
+
+
+class BrowserSearchGoogleTool(BaseTool):
+    name = "browser.search_google"
+    description = "Search Google for a query"
+    risk_level = "low"
+    requires_confirmation = False
+
+    def execute(self, query: str):
+        """Search Google"""
+        return search_google(query)
+
+
+class BrowserOpenYouTubeTool(BaseTool):
+    name = "browser.open_youtube"
+    description = "Open YouTube homepage"
+    risk_level = "low"
+    requires_confirmation = False
+
+    def execute(self):
+        """Open YouTube"""
+        return open_youtube()
