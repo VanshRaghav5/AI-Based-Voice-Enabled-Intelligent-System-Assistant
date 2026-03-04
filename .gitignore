@@ -3,6 +3,7 @@
 # ==================================
 venv/
 .env/
+backend/venv/
 
 # ==================================
 # Python Cache / Build Files
@@ -57,3 +58,4 @@ backend/voice_engine/tts/piper/input.txt
 # Global Audio Files (Generated)
 # ==================================
 *.wav
+desktop/
