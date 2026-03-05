@@ -1,193 +1,158 @@
-# OmniAssist AI - Desktop UI
+# OmniAssist AI - Desktop Interface
 
-Modern desktop interface for the OmniAssist AI voice assistant, built with CustomTkinter.
+Voice-enabled AI assistant with Siri-style fullscreen overlay and real-time audio visualization.
+
+## 🚀 Quick Start
+
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Start Backend
+```bash
+python backend/api_service.py
+```
+Backend runs on `http://127.0.0.1:5000`
+
+### 3. Launch Desktop UI
+```bash
+python desktop_1/main.py
+```
+
+## ✨ Key Features
+
+### 🎙️ Siri-Style Voice Interface
+- **Fullscreen Overlay** - Immersive voice interaction experience
+- **Audio-Reactive Orb** - Glowing orb that responds to voice amplitude
+- **Live Transcription** - Real-time speech-to-text display
+- **Smooth Animations** - Fade transitions and breathing effects
+
+### 💬 Modern Chat Interface
+- **Message Bubbles** - User (blue) / Assistant (gray) / System (orange)
+- **Typewriter Effect** - Animated assistant responses
+- **Execution Steps** - Live progress indicators for multi-step tasks
+- **Auto-scroll** - Always shows latest messages
+
+### 📊 Smart Status Indicators
+- 🟢/🔴 **Connection Status** - Backend connectivity
+- 🎤 **Listening** - Active voice capture
+- ⚙️ **Processing** - Command execution
+- 💾 **Memory** / 🎭 **Persona** / 🌐 **Language** - Current settings
+
+### 🎨 Audio Visualization
+- **Real-Time Amplitude** - Microphone input visualization (~30 FPS)
+- **Smooth Interpolation** - Fluid orb size transitions
+- **Background Processing** - Non-blocking audio capture
 
 ## 📁 Project Structure
 
 ```
 desktop_1/
-├── main.py                 # Application entry point
-├── config.py              # Configuration settings
-├── requirements.txt       # Python dependencies
+├── main.py                      # Application entry point
+├── requirements.txt             # Dependencies
+│
 ├── ui/
-│   ├── chat_window.py     # Main chat interface with bubbles
-│   ├── status_bar.py      # Real-time status indicators
-│   └── confirmation_popup.py  # Confirmation dialogs
+│   ├── chat_window.py          # Main chat interface
+│   ├── listening_overlay.py    # Fullscreen Siri overlay
+│   ├── siri_orb.py            # Audio-reactive orb visualizer
+│   ├── status_bar.py          # Status indicators
+│   └── confirmation_popup.py   # Confirmation dialogs
+│
+├── audio/
+│   └── mic_visualizer.py      # Microphone amplitude capture
+│
 └── services/
-    ├── api_client.py      # REST API client
-    └── socket_client.py   # WebSocket client
+    ├── api_client.py          # REST API client
+    └── socket_client.py       # Socket.IO WebSocket client
 ```
 
-## 🚀 Quick Start
-
-### 1. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-**Required packages:**
-- `customtkinter` - Modern UI framework
-- `requests` - HTTP client
-- `python-socketio[client]` - WebSocket support
-
-### 2. Start Backend Server
-
-```bash
-# From project root
-python backend\api_service.py
-```
-
-Backend runs on `http://localhost:5000`
-
-### 3. Launch Desktop UI
-
-```bash
-# From project root
-python desktop_1\main.py
-```
-
-## ✨ Features
-
-### 💬 Chat Interface
-- **Message Bubbles**: User (blue, right) / Assistant (green, left) / System (orange, center)
-- **Processing Indicator**: Purple "thinking" bubble while processing
-- **Multi-Step Execution**: Live step-by-step progress display
-- **Auto-scroll**: Always shows latest messages
-
-### 🎤 Voice Control
-- **Start/Stop Listening**: Toggle microphone with visual feedback
-- **Live Transcription**: See what you say in real-time
-- **Voice Input Events**: Shows "🎤 Heard: ..." messages
-
-### 📊 Status Bar
-Real-time indicators at bottom:
-- 🟢 **Connected** / 🔴 **Disconnected**
-- 🎤 **Listening...** (when mic active)
-- ⚙ **Processing...** (during command execution)
-
-### ⚙️ Settings Indicator
-Top-right badge showing:
-- 💾 **Memory**: ON/OFF - Conversation memory status
-- 🎭 **Persona**: Friendly/Professional/Concise
-- 🌐 **Language**: English/Hindi/Hinglish
-
-### 🔄 Real-Time Updates (WebSocket)
-- `voice_input` - Live speech transcription
-- `command_result` - Command execution results
-- `execution_step` - Multi-step progress (🔹 running, ✅ success, ❌ failed)
-- `confirmation_required` - Safety confirmations for critical actions
-- `error` - Error notifications
-
-### 🛡️ Smart Error Handling
-- **Connection Retry**: Auto-retry on backend disconnect
-- **30s Timeout**: Re-enables input if no response
-- **Threading**: Non-blocking UI during command processing
-- **Auto-focus**: Input field ready after each command
-
-## 🎨 UI Components
-
-### ChatWindow (`ui/chat_window.py`)
-Main interface with:
-- Scrollable message area
-- Input field with Enter-key support
-- Send button (disabled during processing)
-- Start/Stop Listening button
-- Memory/Settings indicator
-
-### StatusBar (`ui/status_bar.py`)
-Bottom bar showing:
-- Connection status (green/red)
-- Listening status (blue)
-- Processing status (orange)
-
-### ConfirmationPopup (`ui/confirmation_popup.py`)
-Dialog for critical actions like:
-- System shutdown
-- File deletion
-- Risky operations
-
-## 🔧 API Integration
-
-### REST Endpoints Used
-- `POST /api/process_command` - Send text commands
-- `POST /api/start_listening` - Enable microphone
-- `POST /api/stop_listening` - Disable microphone
-- `POST /api/confirm` - Approve/deny confirmations
-
-### WebSocket Events
-**Received:**
-- `connection_status` - Initial connection state
-- `voice_input` - Speech transcription
-- `command_result` - Execution results
-- `execution_step` - Step progress
-- `confirmation_required` - Confirmation requests
-- `listening_status` - Mic state changes
-- `error` - Error messages
-
-**Sent:**
-- `send_command` - Alternative to REST API
-
-## 💡 Usage Examples
+## 🎯 Usage
 
 ### Text Commands
 1. Type command in input field
-2. Press Enter or click Send
-3. Watch step-by-step execution
-4. Get assistant response
+2. Press **Enter** or click **Send**
+3. Watch real-time execution steps
+4. Get assistant response with typewriter animation
 
 ### Voice Commands
-1. Click "Start Listening"
-2. Speak your command
-3. See live transcription
-4. Automatic processing
+1. Click **🎙 Start Listening**
+2. **Fullscreen overlay appears** with glowing orb
+3. **Speak** your command - orb reacts to your voice
+4. Watch **live transcript** update
+5. Overlay transitions to **"Processing..."** state
+6. Assistant responds and overlay **fades out**
 
-### Example Commands
-- "open WhatsApp"
-- "search for weather on Google"
-- "lock my computer"
-- "send message to [contact] saying [message]"
+## 🔧 State Transitions
 
-## 🎯 Key Highlights
+```
+IDLE → Click "Start Listening" → LISTENING
+  (Overlay shows, orb reacts to voice)
+       ↓ 
+   Voice input complete
+       ↓
+PROCESSING (Orb slow pulse, "Processing..." text)
+       ↓
+   Backend responds
+       ↓
+RESPONDING (Fade out, result in chat)
+       ↓
+    IDLE
+```
 
-✅ **Production-Ready UI** - Polished chat bubbles, not terminal output  
-✅ **Real-Time Feedback** - Live status, processing, and step indicators  
-✅ **Async Processing** - Non-blocking UI with timeout protection  
-✅ **Professional UX** - Clawbot-level polish and responsiveness  
-✅ **Smart Error Handling** - Graceful degradation on connection issues  
+## 🔌 Backend Integration
 
-## 📝 Configuration
+### REST Endpoints
+- `POST /api/process_command` - Submit text command
+- `POST /api/start_listening` - Activate microphone
+- `POST /api/stop_listening` - Deactivate microphone
+- `POST /api/confirm` - Approve/deny confirmations
 
-Edit `config.py` to customize:
-- Backend URL (default: `http://127.0.0.1:5000`)
-- UI theme (dark/light)
-- Default settings
+### Socket.IO Events
+| Event | Purpose |
+|-------|---------|
+| `voice_input` | Live speech transcription |
+| `command_result` | Execution results |
+| `execution_step` | Multi-step progress |
+| `confirmation_required` | Safety confirmations |
+| `listening_status` | Mic state changes |
+| `error` | Error messages |
 
 ## 🐛 Troubleshooting
 
-**UI shows "Backend not running":**
-- Ensure `backend\api_service.py` is running
-- Check backend is on `http://localhost:5000`
+**Backend not connecting:**
+- Ensure backend is running: `python backend/api_service.py`
+- Verify backend URL: `http://127.0.0.1:5000`
+- Check firewall settings
 
-**Input field stuck disabled:**
-- Fixed with 30s timeout auto-reset
-- Check browser console for errors
-- Restart UI if needed
+**Microphone not working:**
+- Verify PyAudio installation: `python -c "import pyaudio; print('OK')"`
+- Check system microphone permissions
+- Test with another audio app
 
-**WebSocket disconnects repeatedly:**
-- Backend may be overloaded
-- Check backend terminal for errors
-- Verify no firewall blocking port 5000
+**Overlay not showing:**
+- Check console for errors
+- Verify CustomTkinter version: `pip show customtkinter`
+- Restart application
 
-## 🚧 Future Enhancements
+## 📦 Dependencies
 
-- [ ] Settings panel (toggle memory, persona, language)
-- [ ] Chat history export
-- [ ] Custom themes
-- [ ] Keyboard shortcuts
-- [ ] Notification sounds
-- [ ] System tray integration
+| Package | Purpose |
+|---------|---------|
+| `customtkinter` | Modern UI framework |
+| `requests` | HTTP client |
+| `python-socketio` | WebSocket communication |
+| `pyaudio` | Microphone audio capture |
+| `numpy` | Audio amplitude calculation |
+
+## 💡 Example Commands
+
+- `"open YouTube"`
+- `"search for AI tutorials on Google"`
+- `"send WhatsApp message to John saying hello"`
+- `"lock my computer"`
+- `"play music"`
 
 ---
 
-**Built with** ❤️ **for the Indian AI ecosystem**
+**Built with ❤️ using CustomTkinter, PyAudio, and NumPy**
