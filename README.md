@@ -98,23 +98,77 @@ Every command is scored `0.0` to `1.0`:
 ## Project Structure
 
 ```
-backend/
-├── core/                  # Orchestration, parsing, execution, tool registry
-├── llm/                   # LLM client, parameter extraction & validation
-├── voice_engine/          # Whisper STT, Piper TTS, audio pipeline
-├── automation/            # All automation tools (files, system, apps, WhatsApp, email)
-├── memory/                # Session state & conversation history
-├── config/                # Logger, settings
-├── api_service.py         # Flask REST + WebSocket API for desktop UI
-└── app.py                 # Minimal CLI entry point
-desktop_1/                 # Desktop UI client
-tests/                     # 90+ tests with full mocking
-app.py                     # Main CLI voice loop
+AI-Based-Voice-Enabled-Intelligent-System-Assistant/
+├── README.md                  # Main documentation (you are here)
+├── START.bat                  # Simple one-click launcher
+├── launcher.bat               # Debug launcher with logs
+├── pytest.ini                 # Test configuration
+├── requirements-test.txt      # Testing dependencies
+│
+├── backend/                   # Core backend system
+│   ├── api_service.py        # Flask REST + WebSocket API (main entry)
+│   ├── requirements.txt      # Backend dependencies
+│   ├── agents/               # Intent, planner, safety, tool agents
+│   ├── automation/           # All automation tools (49 tools)
+│   │   ├── app_launcher.py
+│   │   ├── browser_control.py
+│   │   ├── whatsapp_desktop.py
+│   │   ├── email_tool.py
+│   │   ├── system/           # Volume, power, screenshot, clipboard, etc.
+│   │   └── file/             # File operations, search
+│   ├── config/               # Logger, settings, assistant config
+│   ├── core/                 # Orchestration, parsing, execution, tool registry
+│   ├── llm/                  # LLM client, parameter extraction & validation
+│   ├── voice_engine/         # Whisper STT, Piper TTS, audio pipeline
+│   ├── memory/               # Session state & conversation history
+│   └── data/                 # Runtime data, audio files
+│
+├── desktop_1/                 # Desktop UI (CustomTkinter)
+│   ├── main.py               # UI entry point
+│   ├── requirements.txt      # Desktop dependencies
+│   ├── ui/                   # Chat window, overlays, visualizers
+│   └── services/             # API client, socket client
+│
+├── cli/                       # Command-line interfaces
+│   ├── app.py                # Full CLI voice loop with confirmation
+│   └── test.py               # Simple test CLI
+│
+├── docs/                      # Documentation
+│   ├── API_DOCUMENTATION.md
+│   ├── SYSTEM_CAPABILITIES.md
+│   ├── COMMAND_PARSING_SUMMARY.md
+│   ├── CONFIDENCE_SYSTEM_SUMMARY.md
+│   ├── TESTING_SUMMARY.md
+│   ├── COMPLETE_INSTALLATION_GUIDE.md
+│   └── reports/              # Development reports
+│       ├── AUTOMATION_STATUS_REPORT.md
+│       ├── AUTOMATION_TEST_REPORT.md
+│       ├── COMPLETE_FIX_REPORT.md
+│       └── LLM_FIX_REPORT.md
+│
+├── examples/                  # Example code & usage patterns
+├── tests/                     # 90+ unit tests (fully mocked)
+├── logs/                      # Runtime logs (auto-created)
+└── venv/                      # Python virtual environment
 ```
 
 ---
 
 ## Getting Started
+
+### Quick Start (Recommended)
+
+**For regular users:**
+```bash
+# Just double-click:
+START.bat
+```
+
+**For developers/debugging:**
+```bash
+# Shows detailed logs:
+launcher.bat
+```
 
 ### Prerequisites
 
@@ -123,32 +177,31 @@ app.py                     # Main CLI voice loop
 - **GPU:** NVIDIA (optional, speeds up Whisper)
 - **Ollama:** Optional — system works without it via keyword fallback
 
-### Installation
+### First Time Installation
 
+#### 1. Clone Repository
 ```bash
-# Clone
 git clone https://github.com/your-repo/AI-Voice-Assistant.git
 cd AI-Based-Voice-Enabled-Intelligent-System-Assistant
-
-# Virtual environment
-python -m venv venv
-venv\Scripts\activate
-
-# Dependencies
-pip install -r backend/requirements.txt
 ```
 
-### Install Ollama (Optional)
+#### 2. Setup Python Environment
+```bash
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r backend/requirements.txt
+pip install -r desktop_1/requirements.txt
+```
 
+#### 3. Install Ollama (Recommended)
 ```bash
 # Download from https://ollama.ai, then:
-ollama pull qwen2.5:7b-instruct
+ollama pull qwen2.5:7b-instruct-q4_0
 ```
 
-> Without Ollama, the system uses built-in keyword matching — fully functional.
+> **Note:** Without Ollama, the system uses built-in keyword matching — fully functional but less intelligent.
 
-### Configure Email (Optional)
-
+#### 4. Configure Email (Optional)
 ```bash
 set SMTP_HOST=smtp.gmail.com
 set SMTP_PORT=587
@@ -156,27 +209,52 @@ set SMTP_USER=your-email@gmail.com
 set SMTP_PASSWORD=your-app-password
 ```
 
+#### 5. Launch
+```bash
+# Simple launcher (recommended)
+START.bat
+
+# Or debug mode with logs
+launcher.bat
+```
+
 ---
 
 ## Running
 
-### Mode 1: CLI Voice Loop
+### Mode 1: Desktop UI (Recommended)
+
+**Simple Launch:**
+```bash
+START.bat
+```
+- Starts backend API automatically
+- Opens desktop UI
+- Runs in background
+- Best for regular use
+
+**Debug Launch:**
+```bash
+launcher.bat
+```
+- Shows detailed logs
+- Checks Ollama status
+- Displays errors
+- Keeps console open
+- Best for troubleshooting
+
+### Mode 2: Manual CLI Voice Loop
 
 ```bash
-python app.py
+python cli/app.py
 ```
 
 Hold `SPACE` to talk, `CTRL+T` to type. Say `exit` to quit.
 
-### Mode 2: Desktop UI + API Backend
+### Mode 3: Backend API Only
 
 ```bash
-# Terminal 1 — Start backend API
 python backend/api_service.py
-
-# Terminal 2 — Run desktop client
-cd desktop_1
-python main.py
 ```
 
 The API exposes REST endpoints and WebSocket events for real-time communication:
@@ -188,9 +266,58 @@ The API exposes REST endpoints and WebSocket events for real-time communication:
 | `/api/start_listening` | POST | Start voice mode |
 | `/api/stop_listening` | POST | Stop voice mode |
 | `/api/confirm` | POST | Approve/reject pending action |
-| `/api/speak` | POST | Trigger TTS |
+| `/api/health` | GET | Backend health check |
 
-See [API_DOCUMENTATION.md](API_DOCUMENTATION.md) for full reference.
+See [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) for full reference.
+
+---
+
+## Troubleshooting
+
+### Backend Won't Start
+```powershell
+# Check logs
+type logs\backend.log
+
+# Manual start to see errors
+.\venv\Scripts\python.exe backend\api_service.py
+```
+
+### Ollama Not Running
+```powershell
+# Start Ollama server
+ollama serve
+
+# In another terminal, verify it's running
+ollama ps
+
+# Test API
+curl http://localhost:11434/api/tags
+```
+
+### Dependencies Missing
+```powershell
+# Reinstall backend dependencies
+.\venv\Scripts\pip install -r backend\requirements.txt
+
+# Reinstall desktop dependencies
+.\venv\Scripts\pip install -r desktop_1\requirements.txt
+```
+
+### Connection Timeout
+```powershell
+# Increase timeout in backend/config/assistant_config.json
+{
+  "llm": {
+    "timeout_seconds": 30
+  }
+}
+```
+
+### UI Won't Connect
+- Ensure backend is running first
+- Check `http://localhost:5000/api/health` in browser
+- Verify firewall isn't blocking port 5000
 
 ---
 
