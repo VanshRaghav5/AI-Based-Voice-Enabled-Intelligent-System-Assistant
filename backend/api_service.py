@@ -22,6 +22,8 @@ from backend.voice_engine.audio_pipeline import listen, speak
 from backend.config.logger import logger
 import threading
 from typing import Optional, Dict, Any
+from functools import lru_cache
+import time
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-this'
@@ -33,6 +35,10 @@ controller = AssistantController()
 is_listening = False
 pending_confirmation: Optional[Dict[str, Any]] = None
 listening_thread: Optional[threading.Thread] = None
+
+# Cache for recent commands to avoid duplicate processing
+_command_cache = {}
+_cache_timeout = 1.0  # 1 second cache for duplicate commands
 
 
 def emit_execution_steps(plan_data):
@@ -111,14 +117,8 @@ def process_command():
     try:
         logger.info(f"[API] Processing command: {command}")
         
-        # Generate plan first to emit steps
-        plan_data = controller.llm_client.generate_plan(command)
-        
-        if plan_data and isinstance(plan_data, dict):
-            # Emit execution steps before processing
-            emit_execution_steps(plan_data)
-        
-        # Process the command (this will execute the plan)
+        # Don't duplicate LLM calls - let controller handle plan generation
+        # Process the command (this handles plan generation internally)
         result = controller.process(command)
         
         # Check if confirmation is required
@@ -127,9 +127,9 @@ def process_command():
             pending_confirmation = result
             # Notify WebSocket clients
             socketio.emit('confirmation_required', result)
-        
-        # Send result to all connected clients
-        socketio.emit('command_result', result)
+        else:
+            # Emit command result
+            socketio.emit('command_result', result)
         
         return jsonify(result)
     except Exception as e:
