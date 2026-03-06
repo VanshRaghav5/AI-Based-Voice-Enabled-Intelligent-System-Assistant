@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import requests
 from backend.config.logger import logger
 from backend.config.settings import LLM_MODEL, LLM_TIMEOUT_SECONDS
 
@@ -17,57 +18,28 @@ class LLMClient:
         """
         default_model = os.getenv("OLLAMA_MODEL", LLM_MODEL)
         self.model = model or default_model
-        self.ollama_bin = None
+        self.ollama_api_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
         self.ollama_available = self._check_ollama()
         self.last_source = None  # Track last plan source: "ollama" or "fallback"
         self.system_prompt = self._load_system_prompt()
 
-    def _get_ollama_candidates(self):
-        """Return possible Ollama executable paths in priority order."""
-        candidates = []
-
-        env_bin = os.getenv("OLLAMA_BIN")
-        if env_bin:
-            candidates.append(env_bin)
-
-        # PATH-discovered binary
-        path_bin = shutil.which("ollama")
-        if path_bin:
-            candidates.append(path_bin)
-
-        # Common Windows install location
-        candidates.append(os.path.expanduser(r"~\AppData\Local\Programs\Ollama\ollama.exe"))
-
-        # Keep order and remove duplicates
-        seen = set()
-        unique_candidates = []
-        for candidate in candidates:
-            if candidate and candidate not in seen:
-                unique_candidates.append(candidate)
-                seen.add(candidate)
-
-        return unique_candidates
-
     def _check_ollama(self):
-        """Check if Ollama is available and accessible."""
-        for candidate in self._get_ollama_candidates():
-            try:
-                result = subprocess.run(
-                    [candidate, "--version"],
-                    capture_output=True,
-                    timeout=5,
-                    shell=False,
-                    encoding='utf-8',
-                    errors='replace'
-                )
-                if result.returncode == 0:
-                    self.ollama_bin = candidate
-                    logger.info(f"[LLMClient] Ollama is available at: {candidate}")
-                    return True
-            except Exception:
-                continue
-
-        logger.warning("[LLMClient] Ollama not accessible - will use fallback mode")
+        """Check if Ollama API is available and accessible."""
+        try:
+            response = requests.get(f"{self.ollama_api_url}/api/tags", timeout=5)
+            if response.status_code == 200:
+                logger.info(f"[LLMClient] Ollama API is available at: {self.ollama_api_url}")
+                # Check if our model is available
+                models = response.json().get('models', [])
+                model_names = [m.get('name', '') for m in models]
+                if self.model in model_names or any(self.model in name for name in model_names):
+                    logger.info(f"[LLMClient] Model '{self.model}' is available")
+                else:
+                    logger.warning(f"[LLMClient] Model '{self.model}' not found. Available models: {model_names}")
+                return True
+        except Exception as e:
+            logger.warning(f"[LLMClient] Ollama API not accessible: {e} - will use fallback mode")
+        
         return False
 
     def _load_system_prompt(self):
@@ -108,50 +80,70 @@ class LLMClient:
                 self.last_source = "fallback"
                 return self._create_fallback_plan(prompt)
             
-            # Try Ollama
-            logger.info(f"[LLMClient] Calling Ollama with model: {self.model}")
+            # Try Ollama HTTP API
+            logger.info(f"[LLMClient] Calling Ollama API with model: {self.model}")
             
             # Format the complete prompt: system instructions + user command
             full_prompt = f"{self.system_prompt}\n\nUSER COMMAND: {prompt}\n\nJSON RESPONSE:"
             
-            cmd = [self.ollama_bin, "run", self.model]
-            logger.debug(f"[LLMClient] Command: {' '.join(cmd)}")
+            # Prepare API request
+            payload = {
+                "model": self.model,
+                "prompt": full_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": 512
+                }
+            }
             
-            result = subprocess.run(
-                cmd,
-                input=full_prompt,
-                text=True,
-                capture_output=True,
-                timeout=LLM_TIMEOUT_SECONDS,
-                shell=False,
-                encoding='utf-8',
-                errors='replace'  # Replace undecodable bytes with replacement character
+            # Call Ollama API
+            response = requests.post(
+                f"{self.ollama_api_url}/api/generate",
+                json=payload,
+                timeout=LLM_TIMEOUT_SECONDS
             )
 
-            if result.returncode != 0:
+            if response.status_code != 200:
+                logger.warning(f"[LLMClient] API error {response.status_code}, using fallback")
                 self.last_source = "fallback"
                 return self._create_fallback_plan(prompt)
 
-            output = result.stdout.strip()
+            result = response.json()
+            output = result.get('response', '').strip()
             logger.info(f"[LLM Output] {output}")
 
             try:
+                # Try to parse as JSON
                 plan = json.loads(output)
                 self.last_source = "ollama"
                 return plan
             except json.JSONDecodeError:
+                # Try to extract JSON from markdown code blocks
+                json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', output, re.DOTALL)
+                if json_match:
+                    try:
+                        plan = json.loads(json_match.group(1))
+                        self.last_source = "ollama"
+                        return plan
+                    except json.JSONDecodeError:
+                        pass
+                
                 logger.warning(f"[LLMClient] Invalid JSON from Ollama, using fallback")
                 self.last_source = "fallback"
                 return self._create_fallback_plan(prompt)
 
-        except subprocess.TimeoutExpired:
+        except requests.Timeout:
             logger.warning("[LLMClient] Ollama timeout - using fallback")
+            self.last_source = "fallback"
+            return self._create_fallback_plan(prompt)
+        except requests.RequestException as e:
+            logger.warning(f"[LLMClient] API request error: {e} - using fallback")
             self.last_source = "fallback"
             return self._create_fallback_plan(prompt)
         except Exception as e:
             logger.warning(f"[LLMClient] Error: {e} - using fallback")
             self.last_source = "fallback"
-            logger.warning(f"[LLMClient] Error: {e} - using fallback")
             return self._create_fallback_plan(prompt)
 
     def _create_fallback_plan(self, prompt: str):
