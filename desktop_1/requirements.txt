@@ -1,3 +1,5 @@
  customtkinter 
  requests 
  python-socketio
+ pyaudio
+ numpy

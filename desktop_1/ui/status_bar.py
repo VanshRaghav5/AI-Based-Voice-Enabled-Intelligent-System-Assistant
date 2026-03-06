@@ -5,76 +5,64 @@ class StatusBar(ctk.CTkFrame):
     """Professional status bar showing connection, listening, and processing states."""
     
     def __init__(self, master):
-        super().__init__(master, fg_color="#1e1e1e", height=40)
+        super().__init__(master, fg_color="#181818", height=30, corner_radius=0)
         
         # Connection status
         self.connection_indicator = ctk.CTkLabel(
             self,
-            text="🔴 Disconnected",
-            text_color="#ff4444",
-            font=("Arial", 12)
+            text="● Offline",
+            text_color="#888888",
+            font=("Inter", 11)
         )
-        self.connection_indicator.pack(side="left", padx=15)
+        self.connection_indicator.pack(side="left", padx=20)
         
         # Listening status
         self.listening_indicator = ctk.CTkLabel(
             self,
             text="",
             text_color="#888888",
-            font=("Arial", 12)
+            font=("Inter", 11)
         )
-        self.listening_indicator.pack(side="left", padx=15)
+        self.listening_indicator.pack(side="left", padx=20)
         
         # Processing status
         self.processing_indicator = ctk.CTkLabel(
             self,
             text="",
             text_color="#888888",
-            font=("Arial", 12)
+            font=("Inter", 11)
         )
-        self.processing_indicator.pack(side="right", padx=15)
+        self.processing_indicator.pack(side="right", padx=20)
     
     def set_connected(self, connected: bool):
-        """Update connection status.
-        
-        Args:
-            connected: True if connected to backend, False otherwise
-        """
+        """Update connection status."""
         if connected:
             self.connection_indicator.configure(
-                text="🟢 Connected",
-                text_color="#4CAF50"
+                text="● Online",
+                text_color="#81C784"
             )
         else:
             self.connection_indicator.configure(
-                text="🔴 Disconnected",
-                text_color="#ff4444"
+                text="● Offline",
+                text_color="#E57373"
             )
     
     def set_listening(self, listening: bool):
-        """Update listening status.
-        
-        Args:
-            listening: True if microphone is active, False otherwise
-        """
+        """Update listening status."""
         if listening:
             self.listening_indicator.configure(
-                text="🎤 Listening...",
-                text_color="#2196F3"
+                text="● Listening",
+                text_color="#64B5F6"
             )
         else:
             self.listening_indicator.configure(text="")
     
     def set_processing(self, processing: bool):
-        """Update processing status.
-        
-        Args:
-            processing: True if command is being processed, False otherwise
-        """
+        """Update processing status."""
         if processing:
             self.processing_indicator.configure(
-                text="⚙ Processing...",
-                text_color="#FFA500"
+                text="● Working...",
+                text_color="#FFD54F"
             )
         else:
             self.processing_indicator.configure(text="")
