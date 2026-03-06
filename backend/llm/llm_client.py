@@ -121,8 +121,10 @@ class LLMClient:
                 "prompt": full_prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.7,
-                    "num_predict": 512
+                    "temperature": 0.3,  # Lower = more deterministic, faster
+                    "num_predict": 512,
+                    "top_k": 20,  # Limit choices for faster processing
+                    "top_p": 0.9  # Nucleus sampling for better quality
                 }
             }
             

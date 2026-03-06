@@ -1,15 +1,201 @@
 import requests
+from typing import Optional, Dict, Any, Tuple
+import os
+import json
 
 BASE_URL = "http://127.0.0.1:5000"
+
+# Token storage
+TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".omniassist", "token.json")
+_current_token: Optional[str] = None
+_current_user: Optional[Dict[str, Any]] = None
+
+
+def _ensure_token_dir():
+    """Ensure token directory exists."""
+    os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
+
+
+def save_token(token: str, user: Dict[str, Any]):
+    """Save authentication token and user info."""
+    global _current_token, _current_user
+    _current_token = token
+    _current_user = user
+    
+    _ensure_token_dir()
+    with open(TOKEN_FILE, 'w') as f:
+        json.dump({
+            'token': token,
+            'user': user
+        }, f)
+
+
+def load_token() -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Load authentication token and user info."""
+    global _current_token, _current_user
+    
+    if _current_token:
+        return _current_token, _current_user
+    
+    if os.path.exists(TOKEN_FILE):
+        try:
+            with open(TOKEN_FILE, 'r') as f:
+                data = json.load(f)
+                _current_token = data.get('token')
+                _current_user = data.get('user')
+                return _current_token, _current_user
+        except Exception:
+            pass
+    
+    return None, None
+
+
+def clear_token():
+    """Clear authentication token."""
+    global _current_token, _current_user
+    _current_token = None
+    _current_user = None
+    
+    if os.path.exists(TOKEN_FILE):
+        os.remove(TOKEN_FILE)
+
+
+def get_auth_headers() -> Dict[str, str]:
+    """Get authentication headers with JWT token."""
+    token, _ = load_token()
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+
+def login(username: str, password: str) -> Tuple[bool, str, Optional[str], Optional[Dict]]:
+    """
+    Login and receive JWT token.
+    
+    Returns:
+        (success, message, token, user)
+    """
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={"username": username, "password": password}
+        )
+        
+        data = response.json()
+        
+        if response.status_code == 200 and data.get('status') == 'success':
+            token = data.get('token')
+            user = data.get('user')
+            save_token(token, user)
+            return True, data.get('message', 'Login successful'), token, user
+        else:
+            return False, data.get('message', 'Login failed'), None, None
+            
+    except Exception as e:
+        return False, f"Connection error: {str(e)}", None, None
+
+
+def logout() -> Tuple[bool, str]:
+    """
+    Logout and revoke token.
+    
+    Returns:
+        (success, message)
+    """
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/auth/logout",
+            headers=get_auth_headers()
+        )
+        
+        clear_token()
+        
+        if response.status_code == 200:
+            return True, "Logged out successfully"
+        else:
+            return True, "Logged out locally"  # Clear token anyway
+            
+    except Exception:
+        clear_token()
+        return True, "Logged out locally"
+
+
+def register(username: str, email: str, password: str) -> Tuple[bool, str]:
+    """
+    Register a new user.
+    
+    Returns:
+        (success, message)
+    """
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/auth/register",
+            json={
+                "username": username,
+                "email": email,
+                "password": password
+            }
+        )
+        
+        data = response.json()
+        
+        if response.status_code == 201 and data.get('status') == 'success':
+            return True, data.get('message', 'Registration successful')
+        else:
+            message = data.get('message', 'Registration failed')
+            if 'errors' in data:
+                # Include validation errors
+                errors = data['errors']
+                if isinstance(errors, dict):
+                    error_msgs = []
+                    for field, msgs in errors.items():
+                        if isinstance(msgs, list):
+                            error_msgs.extend(msgs)
+                        else:
+                            error_msgs.append(str(msgs))
+                    message += ": " + ", ".join(error_msgs)
+            return False, message
+            
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"
+
+
+def verify_token() -> Tuple[bool, Optional[Dict]]:
+    """
+    Verify if current token is valid.
+    
+    Returns:
+        (valid, user_info)
+    """
+    try:
+        response = requests.get(
+            f"{BASE_URL}/api/auth/verify",
+            headers=get_auth_headers()
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            return True, data.get('user')
+        else:
+            clear_token()
+            return False, None
+            
+    except Exception:
+        return False, None
+
 
 def process_command(command: str):
     return requests.post(
         f"{BASE_URL}/api/process_command",
-        json={"command": command}
+        json={"command": command},
+        headers=get_auth_headers()
     )
 
 def start_listening():
-    return requests.post(f"{BASE_URL}/api/start_listening")
+    return requests.post(
+        f"{BASE_URL}/api/start_listening",
+        headers=get_auth_headers()
+    )
 
 def stop_listening():
     return requests.post(f"{BASE_URL}/api/stop_listening")
@@ -19,3 +205,15 @@ def send_confirmation(approved: bool):
         f"{BASE_URL}/api/confirm",
         json={"approved": approved}
     )
+
+def update_settings(settings: dict):
+    """Update backend settings (persona, language, memory)."""
+    return requests.post(
+        f"{BASE_URL}/api/settings",
+        json=settings,
+        headers=get_auth_headers()
+    )
+
+def get_settings():
+    """Get current backend settings."""
+    return requests.get(f"{BASE_URL}/api/settings")

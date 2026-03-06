@@ -40,3 +40,12 @@ python-dotenv>=1.0.0  # For environment variables
 # Logging and monitoring
 python-json-logger>=2.0.4  # Optional: for better logging
 
+# Security
+PyJWT>=2.8.0  # JWT token generation and validation
+Flask-JWT-Extended>=4.6.0  # JWT integration for Flask
+bcrypt>=4.1.0  # Password hashing
+Flask-Limiter>=3.5.0  # Rate limiting
+SQLAlchemy>=2.0.0  # ORM for SQL injection prevention
+marshmallow>=3.20.0  # Input validation and serialization
+email-validator>=2.1.0  # Email validation
+
