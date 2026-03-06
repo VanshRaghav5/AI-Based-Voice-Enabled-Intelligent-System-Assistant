@@ -1,13 +1,14 @@
 {
   "assistant": {
-    "active_persona": "butler",
+    "active_persona": "professional",
     "user_title": "sir",
     "exit_commands": [
       "exit",
       "quit",
       "shutdown",
       "stop assistant",
-      "goodbye"
+      "goodbye",
+      "close"
     ]
   },
   "recording": {
@@ -16,7 +17,7 @@
   },
   "stt": {
     "model": "tiny.en",
-    "language": "en",
+    "language": "hinglish",
     "beam_size": 3,
     "best_of": 3,
     "no_speech_threshold": 0.35,

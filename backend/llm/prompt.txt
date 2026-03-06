@@ -99,6 +99,54 @@ EXAMPLES:
 User: "Open YouTube"
 {"steps": [{"name": "browser.open_youtube", "args": {}}]}
 
+User: "Search for python tutorials"
+{"steps": [{"name": "browser.search_google", "args": {"query": "python tutorials"}}]}
+
+User: "Send a WhatsApp message to John saying hello"
+{"steps": [{"name": "whatsapp.send", "args": {"target": "John", "message": "hello"}}]}
+
+User: "Increase volume"
+{"steps": [{"name": "system.volume.up", "args": {}}]}
+
+User: "Take a screenshot"
+{"steps": [{"name": "system.screenshot", "args": {}}]}
+
+User: "Create a file called test.txt"
+{"steps": [{"name": "file.create", "args": {"path": "test.txt"}}]}
+
+User: "Open Chrome"
+{"steps": [{"name": "app.open", "args": {"app_name": "chrome"}}]}
+
+User: "Lock my computer"
+{"steps": [{"name": "system.lock", "args": {}}]}
+
+User: "Copy this text to clipboard"
+{"steps": [{"name": "clipboard.copy", "args": {"text": "this text"}}]}
+
+User: "Show desktop"
+{"steps": [{"name": "window.minimize_all", "args": {}}]}
+
+User: "Open File Explorer"
+{"steps": [{"name": "system.file_explorer", "args": {}}]}
+
+User: "Set brightness to 50"
+{"steps": [{"name": "display.brightness.set", "args": {"level": 50}}]}
+
+User: "Search Google for AI news"
+{"steps": [{"name": "browser.search_google", "args": {"query": "AI news"}}]}
+
+User: "Open YouTube and search for music"
+{"steps": [{"name": "browser.open_url", "args": {"url": "https://www.youtube.com/results?search_query=music"}}]}
+
+IMPORTANT:
+- Match commands to the CLOSEST available tool
+- Extract ALL required parameters from the user's natural language
+- For "open [app]" use app.open with app_name
+- For "search" use browser.search_google with query
+- For "send message" use whatsapp.send with target and message
+- If unsure which tool, choose the most logical match
+- NEVER return empty steps unless command is truly unrecognizable
+
 User: "Open Chrome"
 {"steps": [{"name": "app.open", "args": {"app_name": "chrome"}}]}
 

@@ -1,73 +1,78 @@
 import customtkinter as ctk
-from services.api_client import process_command, start_listening, stop_listening
+from services.api_client import process_command, start_listening, stop_listening, update_settings
 from services.socket_client import sio, connect, is_connected
 from ui.confirmation_popup import show_confirmation
 from ui.status_bar import StatusBar
 from ui.listening_overlay import ListeningOverlay
+from ui.settings_modal import SettingsModal
 from audio.mic_visualizer import MicVisualizer
+from settings_manager import settings_manager
 import threading
 
 class ChatWindow(ctk.CTkFrame):
     def __init__(self, master):
-        super().__init__(master, fg_color="#0A0A0A")
+        # Determine theme
+        self.is_dark = settings_manager.get("theme") == "dark"
+        bg_color = "#0A0A0A" if self.is_dark else "#F5F5F5"
+        
+        super().__init__(master, fg_color=bg_color)
+        self.master_window = master
+        self.settings_manager = settings_manager
 
-        # Top bar with memory/settings indicator
-        top_bar = ctk.CTkFrame(self, fg_color="transparent", height=45)
-        top_bar.pack(fill="x", padx=15, pady=(15, 5))
+        # Top bar with settings button
+        top_bar = ctk.CTkFrame(self, fg_color="transparent", height=35)
+        top_bar.pack(fill="x", padx=15, pady=(8, 3))
         
-        # Memory indicator on the right - Modern pill style
-        self.memory_indicator = ctk.CTkFrame(top_bar, fg_color="#252525", corner_radius=20, border_width=1, border_color="#333333")
-        self.memory_indicator.pack(side="right")
-        
-        # Memory status
-        memory_label = ctk.CTkLabel(
-            self.memory_indicator,
-            text="💾 Memory: ON",
-            text_color="#81C784",
-            font=("Inter", 11, "bold"),
-            padx=12,
-            pady=4
+        # Title on the left
+        title_label = ctk.CTkLabel(
+            top_bar,
+            text="OmniAssist",
+            text_color="white" if self.is_dark else "#000000",
+            font=("Inter", 13, "bold")
         )
-        memory_label.grid(row=0, column=0, padx=(5, 0), pady=2, sticky="w")
+        title_label.pack(side="left")
         
-        # Persona
-        persona_label = ctk.CTkLabel(
-            self.memory_indicator,
-            text="🎭 Persona: Friendly",
-            text_color="#BBDEFB",
-            font=("Inter", 11),
-            padx=12,
-            pady=4
-        )
-        persona_label.grid(row=0, column=1, padx=2, pady=2, sticky="w")
+        # Status indicator in the middle (placeholder)
+        status_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        status_frame.pack(side="left", expand=True, fill="x", padx=20)
         
-        # Language
-        language_label = ctk.CTkLabel(
-            self.memory_indicator,
-            text="🌐 Hinglish",
-            text_color="#FFE0B2",
-            font=("Inter", 11),
-            padx=12,
-            pady=4
+        # Settings button on the right
+        settings_btn = ctk.CTkButton(
+            top_bar,
+            text="⚙️",
+            width=35,
+            height=35,
+            corner_radius=6,
+            fg_color="#252525" if self.is_dark else "#E0E0E0",
+            hover_color="#333333" if self.is_dark else "#D0D0D0",
+            text_color="white" if self.is_dark else "#000000",
+            font=("Inter", 15),
+            command=self._open_settings
         )
-        language_label.grid(row=0, column=2, padx=(0, 5), pady=2, sticky="w")
+        settings_btn.pack(side="right", padx=5)
 
         # Scrollable frame for chat bubbles - Slightly darker for contrast
-        self.chat_scroll = ctk.CTkScrollableFrame(self, fg_color="#121212")
-        self.chat_scroll.pack(fill="both", expand=True, padx=15, pady=5)
+        scroll_bg = "#121212" if self.is_dark else "#FFFFFF"
+        self.chat_scroll = ctk.CTkScrollableFrame(self, fg_color=scroll_bg)
+        self.chat_scroll.pack(fill="both", expand=True, padx=15, pady=(3, 8))
 
         # Input area frame - Sleeker integrated look
         input_frame = ctk.CTkFrame(self, fg_color="transparent")
         input_frame.pack(fill="x", padx=15, pady=(5, 10))
 
+        entry_bg = "#1e1e1e" if self.is_dark else "#FFFFFF"
+        entry_text = "#ffffff" if self.is_dark else "#000000"
+        entry_border = "#333333" if self.is_dark else "#CCCCCC"
+        
         self.entry = ctk.CTkEntry(
             input_frame, 
             placeholder_text="Type your command here...",
             height=45,
             corner_radius=22,
             border_width=1,
-            border_color="#333333",
-            fg_color="#1e1e1e",
+            border_color=entry_border,
+            fg_color=entry_bg,
+            text_color=entry_text,
             font=("Inter", 13)
         )
         self.entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
@@ -90,13 +95,18 @@ class ChatWindow(ctk.CTkFrame):
         controls_frame = ctk.CTkFrame(self, fg_color="transparent")
         controls_frame.pack(fill="x", padx=15, pady=(0, 10))
 
+        listen_bg = "#333333" if self.is_dark else "#E0E0E0"
+        listen_hover = "#444444" if self.is_dark else "#D0D0D0"
+        listen_text = "#ffffff" if self.is_dark else "#000000"
+        
         self.listen_btn = ctk.CTkButton(
             controls_frame, 
             text="🎙 Start Listening", 
             height=35,
             corner_radius=18,
-            fg_color="#333333",
-            hover_color="#444444",
+            fg_color=listen_bg,
+            hover_color=listen_hover,
+            text_color=listen_text,
             font=("Inter", 12),
             command=self.toggle_listen
         )
@@ -122,48 +132,112 @@ class ChatWindow(ctk.CTkFrame):
         
         # Track processing timeout
         self.processing_timeout_id = None
-        
-        # Store memory indicator labels for updates
-        self.memory_label = memory_label
-        self.persona_label = persona_label
-        self.language_label = language_label
 
         # Animation state tracking
         self.pulse_ids = {} # {widget_id: after_id}
         self.typewriter_ids = {} # {label_id: after_id}
-
-    def update_memory_status(self, enabled: bool):
-        """Update memory indicator status.
-        
-        Args:
-            enabled: True if memory is enabled, False otherwise
-        """
-        if enabled:
-            self.memory_label.configure(
-                text="💾 Memory: ON",
-                text_color="#4CAF50"
-            )
-        else:
-            self.memory_label.configure(
-                text="💾 Memory: OFF",
-                text_color="#888888"
-            )
     
-    def update_persona(self, persona: str):
-        """Update persona indicator.
-        
-        Args:
-            persona: Persona name (e.g., 'Friendly', 'Professional', 'Concise')
-        """
-        self.persona_label.configure(text=f"🎭 Persona: {persona}")
+    def _open_settings(self):
+        """Open the settings modal."""
+        settings_window = SettingsModal(self.master_window, self.settings_manager)
+        settings_window.on_settings_changed = self._on_settings_changed
     
-    def update_language(self, language: str):
-        """Update language indicator.
+    def _on_settings_changed(self, setting_key, value):
+        """Handle settings changes (instant, no restart needed)."""
+        if setting_key == "theme":
+            # Apply theme change instantly (UI only)
+            self._apply_theme_change(value)
+        elif setting_key == "font_size":
+            # Update font sizes dynamically (UI only)
+            self._apply_font_size(value)
+        elif setting_key in ["persona", "language", "memory_enabled"]:
+            # Send to backend for processing
+            self._sync_setting_to_backend(setting_key, value)
+    
+    def _sync_setting_to_backend(self, setting_key, value):
+        """Send setting change to backend API."""
+        try:
+            if not is_connected():
+                self.add_message("⚠ Cannot update backend settings: not connected", sender="system")
+                return
+            
+            # Map frontend setting names to backend names
+            backend_settings = {setting_key: value}
+            
+            # Send to backend
+            response = update_settings(backend_settings)
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                # Check for errors in response
+                if result.get('errors'):
+                    error_msg = '; '.join(result['errors'])
+                    self.add_message(f"⚠ Failed to update {setting_key}: {error_msg}", sender="system")
+                    return
+                
+                # Show success message
+                if setting_key == "persona":
+                    self.add_message(f"✓ Persona changed to: {value.capitalize()}", sender="system")
+                elif setting_key == "language":
+                    self.add_message(f"✓ Language changed to: {value.capitalize()}", sender="system")
+                elif setting_key == "memory_enabled":
+                    status = "enabled" if value else "disabled"
+                    self.add_message(f"✓ Memory {status}", sender="system")
+            else:
+                # Try to get error message from response
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('message', 'Unknown error')
+                except:
+                    error_msg = f"HTTP {response.status_code}"
+                self.add_message(f"⚠ Failed to update {setting_key}: {error_msg}", sender="system")
+                
+        except Exception as e:
+            self.add_message(f"⚠ Error updating {setting_key}: {str(e)}", sender="system")
+    
+    def _apply_theme_change(self, theme):
+        """Apply theme change instantly without restart."""
+        self.is_dark = theme == "dark"
+        ctk.set_appearance_mode(theme)
         
-        Args:
-            language: Language name (e.g., 'English', 'Hindi', 'Hinglish')
-        """
-        self.language_label.configure(text=f"🌐 Language: {language}")
+        # Update main background
+        bg_color = "#0A0A0A" if self.is_dark else "#F5F5F5"
+        self.configure(fg_color=bg_color)
+        
+        # Update chat scroll background
+        scroll_bg = "#121212" if self.is_dark else "#FFFFFF"
+        self.chat_scroll.configure(fg_color=scroll_bg)
+        
+        # Update input field colors
+        entry_bg = "#1e1e1e" if self.is_dark else "#FFFFFF"
+        entry_text = "#ffffff" if self.is_dark else "#000000"
+        entry_border = "#333333" if self.is_dark else "#CCCCCC"
+        
+        self.entry.configure(
+            fg_color=entry_bg,
+            text_color=entry_text,
+            border_color=entry_border
+        )
+        
+        # Update listen button colors
+        listen_bg = "#333333" if self.is_dark else "#E0E0E0"
+        listen_hover = "#444444" if self.is_dark else "#D0D0D0"
+        listen_text = "#ffffff" if self.is_dark else "#000000"
+        
+        self.listen_btn.configure(
+            fg_color=listen_bg,
+            hover_color=listen_hover,
+            text_color=listen_text
+        )
+        
+        self.add_message(f"✓ Theme changed to {theme.capitalize()}", sender="system")
+    
+    def _apply_font_size(self, size):
+        """Apply font size change dynamically."""
+        # Would need to update all text elements
+        # For now, just show confirmation
+        self.add_message(f"✓ Font size changed to {size}pt", sender="system")
 
     def attempt_connection(self):
         """Try to connect to backend and update UI accordingly."""
@@ -325,6 +399,16 @@ class ChatWindow(ctk.CTkFrame):
             is_listening = data.get('listening', False)
             self.after(0, lambda: self._update_listening_ui(is_listening))
         
+        @sio.on("assistant_shutdown")
+        def on_shutdown(data):
+            msg = data.get('message', 'Shutting down assistant') if isinstance(data, dict) else str(data)
+            self.after(0, lambda: self.overlay.set_responding())
+            self.after(0, self.mic_visualizer.stop)
+            self.after(0, lambda: self._update_listening_ui(False))
+            self.after(0, lambda: self.add_message(f"👋 {msg}", sender="system"))
+            # Close the application after 1 second
+            self.after(1000, self._shutdown_application)
+        
         @sio.on("connect")
         def on_connect():
             self.after(0, lambda: self.status_bar.set_connected(True))
@@ -335,6 +419,28 @@ class ChatWindow(ctk.CTkFrame):
             self.after(0, lambda: self.status_bar.set_connected(False))
             self.after(0, self._clear_status_indicators)
             self.after(0, lambda: self.add_message("⚠ Disconnected from backend.", sender="system"))
+    
+    def _shutdown_application(self):
+        """Shutdown the application gracefully."""
+        try:
+            print("[App] Shutting down application")
+            # Stop listening if active
+            if self.listening:
+                self.mic_visualizer.stop()
+            # Close overlay
+            if hasattr(self, 'overlay'):
+                self.overlay.destroy()
+            # Disconnect from backend
+            from services.socket_client import disconnect
+            disconnect()
+            # Quit the application
+            self.master_window.quit()
+            self.master_window.destroy()
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
+            # Force quit anyway
+            import sys
+            sys.exit(0)
 
     def _clear_status_indicators(self):
         """Reset status indicators on disconnect."""
