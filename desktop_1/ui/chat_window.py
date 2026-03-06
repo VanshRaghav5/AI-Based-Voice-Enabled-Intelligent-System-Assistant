@@ -117,7 +117,8 @@ class ChatWindow(ctk.CTkFrame):
         self.listening = False
 
         self.setup_socket()
-        self.attempt_connection()
+        # Delay connection until main loop starts (fixes threading issue)
+        self.after(100, self.attempt_connection)
         
         # Track processing timeout
         self.processing_timeout_id = None

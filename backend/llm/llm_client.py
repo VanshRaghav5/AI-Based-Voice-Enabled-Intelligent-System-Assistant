@@ -4,6 +4,8 @@ import os
 import re
 import shutil
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from backend.config.logger import logger
 from backend.config.settings import LLM_MODEL, LLM_TIMEOUT_SECONDS
 
@@ -19,14 +21,41 @@ class LLMClient:
         default_model = os.getenv("OLLAMA_MODEL", LLM_MODEL)
         self.model = model or default_model
         self.ollama_api_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
+        
+        # Setup HTTP session with connection pooling
+        self.session = self._create_session()
+        
         self.ollama_available = self._check_ollama()
         self.last_source = None  # Track last plan source: "ollama" or "fallback"
         self.system_prompt = self._load_system_prompt()
+    
+    def _create_session(self):
+        """Create requests session with connection pooling and retries."""
+        session = requests.Session()
+        
+        # Configure retries for robustness
+        retry_strategy = Retry(
+            total=2,
+            backoff_factor=0.1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["POST", "GET"]
+        )
+        
+        # Mount adapters for both http and https
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,
+            pool_maxsize=10
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        
+        return session
 
     def _check_ollama(self):
         """Check if Ollama API is available and accessible."""
         try:
-            response = requests.get(f"{self.ollama_api_url}/api/tags", timeout=5)
+            response = self.session.get(f"{self.ollama_api_url}/api/tags", timeout=5)
             if response.status_code == 200:
                 logger.info(f"[LLMClient] Ollama API is available at: {self.ollama_api_url}")
                 # Check if our model is available
@@ -97,8 +126,8 @@ class LLMClient:
                 }
             }
             
-            # Call Ollama API
-            response = requests.post(
+            # Call Ollama API using session (with connection pooling)
+            response = self.session.post(
                 f"{self.ollama_api_url}/api/generate",
                 json=payload,
                 timeout=LLM_TIMEOUT_SECONDS
