@@ -5,6 +5,7 @@ from backend.core.multi_executor import MultiExecutor
 from backend.memory.session_state import SessionState
 from backend.automation.registry_tools import register_all_tools
 from backend.config.logger import logger
+from backend.core.persona import persona
 import keyboard
 
 
@@ -48,9 +49,10 @@ class AssistantController:
             plan_data = self.llm_client.generate_plan(text)
             
             if not plan_data:
+                error_msg = persona.stylize_response("I did not understand that command.", status="error")
                 return {
                     "status": "error",
-                    "message": "I did not understand that command.",
+                    "message": error_msg,
                     "data": {}
                 }
             
@@ -62,6 +64,7 @@ class AssistantController:
                 # Store plan for later confirmation
                 self.pending_plan = plan_data
                 confirm_msg = results[-1].get("message", "Confirm action?")
+                confirm_msg = persona.stylize_response(confirm_msg, status="confirmation_required")
                 logger.info(f"[AssistantController] Waiting for confirmation: {confirm_msg}")
                 
                 # Return confirmation request
@@ -75,18 +78,28 @@ class AssistantController:
             for result in results:
                 self.memory.add_history(result)
             
-            logger.info(f"[AssistantController] Result: {results}")
-            return results[-1] if results else {
+            # Apply persona styling to final message
+            if results and results[-1]:
+                final_result = results[-1]
+                status = final_result.get("status", "success")
+                message = final_result.get("message", "Command completed")
+                styled_message = persona.stylize_response(message, status=status)
+                final_result["message"] = styled_message
+                logger.info(f"[AssistantController] Result: {final_result}")
+                return final_result
+            
+            return {
                 "status": "error",
-                "message": "Execution failed.",
+                "message": persona.stylize_response("Execution failed.", status="error"),
                 "data": {}
             }
             
         except Exception as e:
             logger.error(f"[AssistantController Error] {e}")
+            error_msg = persona.stylize_response(str(e), status="error")
             return {
                 "status": "error",
-                "message": str(e),
+                "message": error_msg,
                 "data": {}
             }
 
