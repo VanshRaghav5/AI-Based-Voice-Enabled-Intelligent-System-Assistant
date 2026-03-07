@@ -10,7 +10,7 @@ from settings_manager import settings_manager
 import threading
 
 class ChatWindow(ctk.CTkFrame):
-    def __init__(self, master):
+    def __init__(self, master, on_logout=None):
         # Determine theme
         self.is_dark = settings_manager.get("theme") == "dark"
         bg_color = "#0A0A0A" if self.is_dark else "#F5F5F5"
@@ -18,47 +18,92 @@ class ChatWindow(ctk.CTkFrame):
         super().__init__(master, fg_color=bg_color)
         self.master_window = master
         self.settings_manager = settings_manager
+        self.on_logout = on_logout
 
-        # Top bar with settings button
-        top_bar = ctk.CTkFrame(self, fg_color="transparent", height=35)
-        top_bar.pack(fill="x", padx=15, pady=(8, 3))
+        # Compact top bar with logo and settings
+        top_bar = ctk.CTkFrame(self, fg_color="transparent", height=40)
+        top_bar.pack(fill="x", padx=10, pady=(5, 0))
+        top_bar.pack_propagate(False)  # Maintain fixed height
         
-        # Title on the left
+        # Logo and title - more compact
+        logo_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        logo_frame.pack(side="left", padx=5)
+        
+        logo_label = ctk.CTkLabel(
+            logo_frame,
+            text="🎙️",
+            font=("Inter", 18)
+        )
+        logo_label.pack(side="left", padx=(0, 5))
+        
         title_label = ctk.CTkLabel(
-            top_bar,
+            logo_frame,
             text="OmniAssist",
             text_color="white" if self.is_dark else "#000000",
-            font=("Inter", 13, "bold")
+            font=("Inter", 14, "bold")
         )
         title_label.pack(side="left")
         
-        # Status indicator in the middle (placeholder)
-        status_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
-        status_frame.pack(side="left", expand=True, fill="x", padx=20)
+        # User info display
+        try:
+            from services.api_client import load_token
+            _, user = load_token()
+            if user:
+                user_label = ctk.CTkLabel(
+                    logo_frame,
+                    text=f"  •  {user.get('username', 'User')}",
+                    text_color="#4A9EFF" if self.is_dark else "#2B5EFF",
+                    font=("Inter", 11, "bold")
+                )
+                user_label.pack(side="left", padx=(5, 0))
+        except Exception as e:
+            print(f"Error loading user info: {e}")
         
-        # Settings button on the right
+        # Right side buttons container
+        buttons_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        buttons_frame.pack(side="right", padx=5)
+        
+        # Logout button
+        logout_btn = ctk.CTkButton(
+            buttons_frame,
+            text="🚪 Logout",
+            width=80,
+            height=32,
+            corner_radius=16,
+            fg_color="#DC2626" if self.is_dark else "#EF4444",
+            hover_color="#B91C1C" if self.is_dark else "#DC2626",
+            text_color="white",
+            font=("Inter", 11, "bold"),
+            command=self._handle_logout
+        )
+        logout_btn.pack(side="right", padx=3)
+        
+        # Settings button on the right - smaller and cleaner
         settings_btn = ctk.CTkButton(
-            top_bar,
-            text="⚙️",
-            width=35,
-            height=35,
-            corner_radius=6,
+            buttons_frame,
+            text="⚙",
+            width=32,
+            height=32,
+            corner_radius=16,
             fg_color="#252525" if self.is_dark else "#E0E0E0",
             hover_color="#333333" if self.is_dark else "#D0D0D0",
             text_color="white" if self.is_dark else "#000000",
-            font=("Inter", 15),
+            font=("Inter", 14),
             command=self._open_settings
         )
-        settings_btn.pack(side="right", padx=5)
+        settings_btn.pack(side="right", padx=3)
 
-        # Scrollable frame for chat bubbles - Slightly darker for contrast
-        scroll_bg = "#121212" if self.is_dark else "#FFFFFF"
-        self.chat_scroll = ctk.CTkScrollableFrame(self, fg_color=scroll_bg)
-        self.chat_scroll.pack(fill="both", expand=True, padx=15, pady=(3, 8))
+        # Expanded chat area - more space for messages
+        scroll_bg = "#0F0F0F" if self.is_dark else "#FAFAFA"
+        self.chat_scroll = ctk.CTkScrollableFrame(self, fg_color=scroll_bg, corner_radius=0)
+        self.chat_scroll.pack(fill="both", expand=True, padx=0, pady=0)
+        
+        # Defer welcome message until widget is fully initialized
+        self.after(200, self._show_welcome_message)
 
         # Input area frame - Sleeker integrated look
         input_frame = ctk.CTkFrame(self, fg_color="transparent")
-        input_frame.pack(fill="x", padx=15, pady=(5, 10))
+        input_frame.pack(fill="x", padx=12, pady=(8, 5))
 
         entry_bg = "#1e1e1e" if self.is_dark else "#FFFFFF"
         entry_text = "#ffffff" if self.is_dark else "#000000"
@@ -91,23 +136,25 @@ class ChatWindow(ctk.CTkFrame):
         )
         self.send_btn.pack(side="right")
 
-        # Control buttons frame
+        # Control buttons frame - more compact
         controls_frame = ctk.CTkFrame(self, fg_color="transparent")
-        controls_frame.pack(fill="x", padx=15, pady=(0, 10))
+        controls_frame.pack(fill="x", padx=12, pady=(5, 5))
 
-        listen_bg = "#333333" if self.is_dark else "#E0E0E0"
-        listen_hover = "#444444" if self.is_dark else "#D0D0D0"
-        listen_text = "#ffffff" if self.is_dark else "#000000"
+        listen_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+        listen_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+        listen_text = "#4A9EFF" if self.is_dark else "#2B5EFF"
         
         self.listen_btn = ctk.CTkButton(
             controls_frame, 
             text="🎙 Start Listening", 
-            height=35,
-            corner_radius=18,
+            height=38,
+            corner_radius=19,
             fg_color=listen_bg,
             hover_color=listen_hover,
             text_color=listen_text,
-            font=("Inter", 12),
+            font=("Inter", 12, "bold"),
+            border_width=2,
+            border_color="#4A9EFF" if self.is_dark else "#2B5EFF",
             command=self.toggle_listen
         )
         self.listen_btn.pack(side="left")
@@ -141,6 +188,29 @@ class ChatWindow(ctk.CTkFrame):
         """Open the settings modal."""
         settings_window = SettingsModal(self.master_window, self.settings_manager)
         settings_window.on_settings_changed = self._on_settings_changed
+    
+    def _handle_logout(self):
+        """Handle logout action."""
+        from services.api_client import clear_token
+        
+        # Disconnect from backend
+        from services.socket_client import disconnect
+        disconnect()
+        
+        # Clear authentication token
+        clear_token()
+        
+        # Stop any active listening
+        if self.listening:
+            self.mic_visualizer.stop()
+            if hasattr(self, 'overlay'):
+                self.overlay.hide()
+        
+        print("👋 Logged out successfully")
+        
+        # Call logout callback if provided
+        if self.on_logout:
+            self.on_logout()
     
     def _on_settings_changed(self, setting_key, value):
         """Handle settings changes (instant, no restart needed)."""
@@ -206,7 +276,7 @@ class ChatWindow(ctk.CTkFrame):
         self.configure(fg_color=bg_color)
         
         # Update chat scroll background
-        scroll_bg = "#121212" if self.is_dark else "#FFFFFF"
+        scroll_bg = "#0F0F0F" if self.is_dark else "#FAFAFA"
         self.chat_scroll.configure(fg_color=scroll_bg)
         
         # Update input field colors
@@ -221,14 +291,15 @@ class ChatWindow(ctk.CTkFrame):
         )
         
         # Update listen button colors
-        listen_bg = "#333333" if self.is_dark else "#E0E0E0"
-        listen_hover = "#444444" if self.is_dark else "#D0D0D0"
-        listen_text = "#ffffff" if self.is_dark else "#000000"
+        listen_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+        listen_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+        listen_text = "#4A9EFF" if self.is_dark else "#2B5EFF"
         
         self.listen_btn.configure(
             fg_color=listen_bg,
             hover_color=listen_hover,
-            text_color=listen_text
+            text_color=listen_text,
+            border_color="#4A9EFF" if self.is_dark else "#2B5EFF"
         )
         
         self.add_message(f"✓ Theme changed to {theme.capitalize()}", sender="system")
@@ -335,47 +406,73 @@ class ChatWindow(ctk.CTkFrame):
             self.listening = is_listening
             
             if is_listening:
-                self.listen_btn.configure(text="Stop Listening", fg_color="#E57373", hover_color="#EF5350")
+                self.listen_btn.configure(
+                    text="⏹ Stop Listening", 
+                    fg_color="#DC2626", 
+                    hover_color="#B91C1C",
+                    text_color="white",
+                    border_color="#DC2626"
+                )
                 if hasattr(self, 'overlay'):
                     self.overlay.show()
                 self.mic_visualizer.start()
             else:
-                self.listen_btn.configure(text="🎙 Start Listening", fg_color="#333333", hover_color="#444444")
+                listen_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+                listen_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+                listen_text = "#4A9EFF" if self.is_dark else "#2B5EFF"
+                self.listen_btn.configure(
+                    text="🎙 Start Listening", 
+                    fg_color=listen_bg, 
+                    hover_color=listen_hover,
+                    text_color=listen_text,
+                    border_color="#4A9EFF" if self.is_dark else "#2B5EFF"
+                )
                 if hasattr(self, 'overlay'):
                     self.overlay.hide()
                 self.mic_visualizer.stop()
         except Exception as e:
             print(f"Error updating listening UI: {e}")
+    
+    def _safe_ui_update(self, callback):
+        """Safely schedule a UI update from any thread."""
+        try:
+            if self.winfo_exists():
+                self.after(0, callback)
+        except RuntimeError:
+            # Main loop not running yet, ignore
+            pass
+        except Exception as e:
+            print(f"Error scheduling UI update: {e}")
 
     def setup_socket(self):
         @sio.on("voice_input")
         def on_voice(data):
             text = data.get('text', data) if isinstance(data, dict) else data
-            self.after(0, lambda: self.overlay.update_transcript(text))
+            self._safe_ui_update(lambda: self.overlay.update_transcript(text))
             # When we receive final transcription, transition to PROCESSING
             is_final = data.get('final', False) if isinstance(data, dict) else False
             if is_final:
-                self.after(0, lambda: self.overlay.set_processing())
-                self.after(0, self.mic_visualizer.stop)
+                self._safe_ui_update(lambda: self.overlay.set_processing())
+                self._safe_ui_update(self.mic_visualizer.stop)
 
         @sio.on("command_result")
         def on_result(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
             # Transition overlay: LISTENING → RESPONDING (fade-out)
-            self.after(0, lambda: self.overlay.set_responding())
-            self.after(0, self.mic_visualizer.stop)
-            self.after(0, lambda: self._update_listening_ui(False))
-            self.after(0, lambda: self.add_message(msg, sender="assistant", animate=True))
-            self.after(0, self._reset_input_state)
+            self._safe_ui_update(lambda: self.overlay.set_responding())
+            self._safe_ui_update(self.mic_visualizer.stop)
+            self._safe_ui_update(lambda: self._update_listening_ui(False))
+            self._safe_ui_update(lambda: self.add_message(msg, sender="assistant", animate=True))
+            self._safe_ui_update(self._reset_input_state)
 
         @sio.on("error")
         def on_error(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
-            self.after(0, lambda: self.overlay.set_responding())
-            self.after(0, self.mic_visualizer.stop)
-            self.after(0, lambda: self._update_listening_ui(False))
-            self.after(0, lambda: self.add_message(f"❌ Error: {msg}", sender="system"))
-            self.after(0, self._reset_input_state)
+            self._safe_ui_update(lambda: self.overlay.set_responding())
+            self._safe_ui_update(self.mic_visualizer.stop)
+            self._safe_ui_update(lambda: self._update_listening_ui(False))
+            self._safe_ui_update(lambda: self.add_message(f"❌ Error: {msg}", sender="system"))
+            self._safe_ui_update(self._reset_input_state)
     
         @sio.on("execution_step")
         def on_execution_step(data):
@@ -384,41 +481,41 @@ class ChatWindow(ctk.CTkFrame):
             status = data.get('status', 'running')
             
             icon = "✅" if status == 'success' else "❌" if status == 'failed' else "🔹"
-            self.after(0, lambda: self.add_message(f"{icon} Step {step_num}: {step_desc}", sender="step"))
+            self._safe_ui_update(lambda: self.add_message(f"{icon} Step {step_num}: {step_desc}", sender="step"))
         
         @sio.on("confirmation_required")
         def on_confirm(data):
             msg = data.get('message', str(data)) if isinstance(data, dict) else data
-            self.after(0, lambda: self.overlay.set_responding())
-            self.after(0, self.mic_visualizer.stop)
-            self.after(0, lambda: self._update_listening_ui(False))
-            self.after(0, lambda: show_confirmation(self, msg))
+            self._safe_ui_update(lambda: self.overlay.set_responding())
+            self._safe_ui_update(self.mic_visualizer.stop)
+            self._safe_ui_update(lambda: self._update_listening_ui(False))
+            self._safe_ui_update(lambda: show_confirmation(self, msg))
         
         @sio.on("listening_status")
         def on_listening_status(data):
             is_listening = data.get('listening', False)
-            self.after(0, lambda: self._update_listening_ui(is_listening))
+            self._safe_ui_update(lambda: self._update_listening_ui(is_listening))
         
         @sio.on("assistant_shutdown")
         def on_shutdown(data):
             msg = data.get('message', 'Shutting down assistant') if isinstance(data, dict) else str(data)
-            self.after(0, lambda: self.overlay.set_responding())
-            self.after(0, self.mic_visualizer.stop)
-            self.after(0, lambda: self._update_listening_ui(False))
-            self.after(0, lambda: self.add_message(f"👋 {msg}", sender="system"))
+            self._safe_ui_update(lambda: self.overlay.set_responding())
+            self._safe_ui_update(self.mic_visualizer.stop)
+            self._safe_ui_update(lambda: self._update_listening_ui(False))
+            self._safe_ui_update(lambda: self.add_message(f"👋 {msg}", sender="system"))
             # Close the application after 1 second
-            self.after(1000, self._shutdown_application)
+            self._safe_ui_update(lambda: self.after(1000, self._shutdown_application))
         
         @sio.on("connect")
         def on_connect():
-            self.after(0, lambda: self.status_bar.set_connected(True))
-            self.after(0, lambda: self.add_message("✓ Connected to backend.", sender="system"))
+            self._safe_ui_update(lambda: self.status_bar.set_connected(True))
+            self._safe_ui_update(lambda: self.add_message("✓ Connected to backend.", sender="system"))
         
         @sio.on("disconnect")
         def on_disconnect():
-            self.after(0, lambda: self.status_bar.set_connected(False))
-            self.after(0, self._clear_status_indicators)
-            self.after(0, lambda: self.add_message("⚠ Disconnected from backend.", sender="system"))
+            self._safe_ui_update(lambda: self.status_bar.set_connected(False))
+            self._safe_ui_update(self._clear_status_indicators)
+            self._safe_ui_update(lambda: self.add_message("⚠ Disconnected from backend.", sender="system"))
     
     def _shutdown_application(self):
         """Shutdown the application gracefully."""
@@ -446,105 +543,187 @@ class ChatWindow(ctk.CTkFrame):
         """Reset status indicators on disconnect."""
         self.status_bar.set_listening(False)
         self.status_bar.set_processing(False)
-        self.listen_btn.configure(text="🎙 Start Listening", fg_color="#333333", hover_color="#444444")
+        listen_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+        listen_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+        listen_text = "#4A9EFF" if self.is_dark else "#2B5EFF"
+        self.listen_btn.configure(
+            text="🎙 Start Listening", 
+            fg_color=listen_bg, 
+            hover_color=listen_hover,
+            text_color=listen_text,
+            border_color="#4A9EFF" if self.is_dark else "#2B5EFF"
+        )
         self.listening = False
         if hasattr(self, 'overlay'):
             self.overlay.hide()
         if hasattr(self, 'mic_visualizer'):
             self.mic_visualizer.stop()
     
+    def _show_welcome_message(self):
+        """Display welcome message when chat starts."""
+        try:
+            welcome_text = (
+                "👋 Hello! I'm OmniAssist, your AI assistant.\n\n"
+                "I can help you with:\n"
+                "  • Opening applications\n"
+                "  • Web searches and browsing\n"
+                "  • System commands\n"
+                "  • File management\n"
+                "  • Answering questions\n\n"
+                "Try saying \"open WhatsApp\" or type your command below!"
+            )
+            self.add_message(welcome_text, sender="assistant")
+        except Exception as e:
+            print(f"Error showing welcome message: {e}")
+    
     def add_message(self, text, sender="assistant", animate=False):
-        """Add a message bubble to the chat area.
+        """Add a message bubble to the chat area with avatar.
         
         Args:
             text: The message text to display
             sender: One of 'user', 'assistant', 'system', 'thinking', or 'step'
             animate: Whether to use a typewriter animation (only for 'assistant')
         """
-        # Create container frame for alignment
-        container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
-        container.pack(fill="x", pady=3)
+        try:
+            # Create container frame for alignment
+            container = ctk.CTkFrame(self.chat_scroll, fg_color="transparent")
+            container.pack(fill="x", pady=6, padx=10)
 
-        if sender == "user":
-            # User messages: Clean blue, right-aligned
-            bubble = ctk.CTkFrame(container, fg_color="#2B5EFF", corner_radius=15)
-            bubble.pack(side="right", padx=(50, 10))
+            if sender == "user":
+                # User messages: Clean blue gradient, right-aligned with avatar
+                msg_frame = ctk.CTkFrame(container, fg_color="transparent")
+                msg_frame.pack(side="right", fill="x")
+                
+                # Avatar
+                avatar = ctk.CTkLabel(
+                    msg_frame,
+                    text="👤",
+                    font=("Inter", 20),
+                    width=30
+                )
+                avatar.pack(side="right", padx=(8, 0))
+                
+                # Message bubble
+                bubble = ctk.CTkFrame(msg_frame, fg_color="#2B5EFF", corner_radius=18)
+                bubble.pack(side="right", padx=(0, 5))
+                
+                label = ctk.CTkLabel(
+                    bubble,
+                    text=text,
+                    text_color="white",
+                    wraplength=380,
+                    padx=16,
+                    pady=11,
+                    font=("Inter", 13),
+                    justify="left",
+                    anchor="w"
+                )
+                label.pack()
+                
+            elif sender == "assistant":
+                # Assistant messages: Dark with accent border, left-aligned with avatar
+                msg_frame = ctk.CTkFrame(container, fg_color="transparent")
+                msg_frame.pack(side="left", fill="x")
+                
+                # Avatar
+                avatar = ctk.CTkLabel(
+                    msg_frame,
+                    text="🤖",
+                    font=("Inter", 20),
+                    width=30
+                )
+                avatar.pack(side="left", padx=(0, 8))
+                
+                # Message bubble with border accent
+                bubble = ctk.CTkFrame(
+                    msg_frame, 
+                    fg_color="#1A1A1A", 
+                    corner_radius=18,
+                    border_width=2,
+                    border_color="#3A3A3A"
+                )
+                bubble.pack(side="left", padx=(5, 0))
+                
+                label = ctk.CTkLabel(
+                    bubble,
+                    text="" if animate else text,
+                    text_color="#E8E8E8",
+                    wraplength=380,
+                    padx=16,
+                    pady=11,
+                    font=("Inter", 13),
+                    justify="left",
+                    anchor="w"
+                )
+                label.pack()
+                
+                if animate:
+                    self._animate_typewriter(label, text)
+                
+            elif sender == "thinking":
+                # Thinking indicator with animation
+                msg_frame = ctk.CTkFrame(container, fg_color="transparent")
+                msg_frame.pack(side="left", padx=38)
+                
+                bubble = ctk.CTkFrame(
+                    msg_frame, 
+                    fg_color="#1A1235", 
+                    corner_radius=15, 
+                    border_width=2, 
+                    border_color="#7C3AED"
+                )
+                bubble.pack()
+                
+                label = ctk.CTkLabel(
+                    bubble,
+                    text=f"✨ {text}",
+                    text_color="#D8B4FE",
+                    padx=18,
+                    pady=10,
+                    font=("Inter", 12, "italic")
+                )
+                label.pack()
+                self._add_pulse_animation(bubble, "#5B21B6", "#A78BFA")
+                
+            elif sender == "step":
+                # Step execution indicator - compact
+                msg_frame = ctk.CTkFrame(container, fg_color="transparent")
+                msg_frame.pack(side="left", padx=48)
+                
+                label = ctk.CTkLabel(
+                    msg_frame,
+                    text=f"▸ {text}",
+                    text_color="#60A5FA",
+                    font=("Inter", 11)
+                )
+                label.pack(anchor="w")
+                
+            else:
+                # System notifications - centered
+                bubble = ctk.CTkFrame(
+                    container, 
+                    fg_color="#1F1F1F", 
+                    corner_radius=12, 
+                    border_width=1, 
+                    border_color="#996320"
+                )
+                bubble.pack(pady=2)
+                
+                label = ctk.CTkLabel(
+                    bubble,
+                    text=text,
+                    text_color="#FFA726",
+                    padx=16,
+                    pady=9,
+                    font=("Inter", 11, "bold")
+                )
+                label.pack()
             
-            label = ctk.CTkLabel(
-                bubble,
-                text=text,
-                text_color="white",
-                wraplength=350,
-                padx=15,
-                pady=10,
-                font=("Inter", 13)
-            )
-            label.pack()
+            # Safe scroll to bottom
+            self.after(100, self._scroll_to_bottom)
             
-        elif sender == "assistant":
-            # Assistant messages: Dark gray, left-aligned
-            bubble = ctk.CTkFrame(container, fg_color="#1E1E1E", corner_radius=15, border_width=1, border_color="#333333")
-            bubble.pack(side="left", padx=(10, 50))
-            
-            label = ctk.CTkLabel(
-                bubble,
-                text="" if animate else text,
-                text_color="#F0F0F0",
-                wraplength=350,
-                padx=15,
-                pady=10,
-                font=("Inter", 13)
-            )
-            label.pack()
-            
-            if animate:
-                self._animate_typewriter(label, text)
-            
-        elif sender == "thinking":
-            # Center-aligned thinking indicator
-            bubble = ctk.CTkFrame(container, fg_color="#2D1B4D", corner_radius=12, border_width=1, border_color="#7C3AED")
-            bubble.pack(pady=10) # No side="left/right" means it stays center
-            
-            label = ctk.CTkLabel(
-                bubble,
-                text=f"✨ {text}",
-                text_color="#E9D5FF",
-                padx=20,
-                pady=8,
-                font=("Inter", 12, "italic")
-            )
-            label.pack()
-            self._add_pulse_animation(bubble, "#4C1D95", "#8B5CF6")
-            
-        elif sender == "step":
-            # Minimalist step execution
-            label = ctk.CTkLabel(
-                container,
-                text=f"○ {text}",
-                text_color="#60A5FA",
-                padx=45,
-                pady=2,
-                font=("Inter", 11)
-            )
-            label.pack(anchor="w")
-            
-        else:
-            # System notifications
-            bubble = ctk.CTkFrame(container, fg_color="#27272A", corner_radius=10, border_width=1, border_color="#3F3F46")
-            bubble.pack(pady=5)
-            
-            label = ctk.CTkLabel(
-                bubble,
-                text=text,
-                text_color="#F59E0B",
-                padx=15,
-                pady=8,
-                font=("Inter", 11, "bold")
-            )
-            label.pack()
-        
-        # Safe scroll to bottom
-        self.after(100, self._scroll_to_bottom)
+        except Exception as e:
+            print(f"Error adding message ({sender}): {e}")
 
     def _scroll_to_bottom(self):
         """Delayed scroll to bottom to ensure UI has rendered."""
