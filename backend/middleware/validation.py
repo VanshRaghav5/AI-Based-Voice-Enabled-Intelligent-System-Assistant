@@ -36,14 +36,14 @@ class RegisterSchema(Schema):
     )
     
     @validates('username')
-    def validate_username(self, value):
+    def validate_username(self, value, **kwargs):
         """Validate username format."""
         # Only allow alphanumeric and underscore
         if not re.match(r'^[a-zA-Z0-9_]+$', value):
             raise ValidationError('Username can only contain letters, numbers, and underscores')
     
     @validates('password')
-    def validate_password(self, value):
+    def validate_password(self, value, **kwargs):
         """Validate password strength."""
         if not re.search(r'[A-Z]', value):
             raise ValidationError('Password must contain at least one uppercase letter')
@@ -62,7 +62,7 @@ class CommandSchema(Schema):
     )
     
     @validates('command')
-    def validate_command(self, value):
+    def validate_command(self, value, **kwargs):
         """Sanitize command input."""
         # Remove any potentially dangerous characters
         dangerous_patterns = [
