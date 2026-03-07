@@ -198,18 +198,32 @@ def process_command(command: str):
     )
 
 def start_listening():
-    return requests.post(
-        f"{BASE_URL}/api/start_listening",
-        headers=get_auth_headers(),
-        timeout=5
-    )
+    """Start voice listening mode. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/start_listening",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error starting voice listening: {e}")
+        return False
 
 def stop_listening():
-    return requests.post(
-        f"{BASE_URL}/api/stop_listening",
-        headers=get_auth_headers(),
-        timeout=5
-    )
+    """Stop voice listening mode. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/stop_listening",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error stopping voice listening: {e}")
+        return False
 
 def send_confirmation(approved: bool):
     return requests.post(
@@ -218,6 +232,48 @@ def send_confirmation(approved: bool):
         headers=get_auth_headers(),
         timeout=10
     )
+
+def start_wake_word():
+    """Start wake word detection. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/wake_word/start",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error starting wake word detection: {e}")
+        return False
+
+def stop_wake_word():
+    """Stop wake word detection. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/wake_word/stop",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error stopping wake word detection: {e}")
+        return False
+
+def get_wake_word_status():
+    """Get wake word detection status."""
+    try:
+        response = requests.get(
+            f"{BASE_URL}/api/wake_word/status",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error getting wake word status: {e}")
+        return None
 
 def update_settings(settings: dict):
     """Update backend settings (persona, language, memory)."""
