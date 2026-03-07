@@ -24,14 +24,14 @@ class RegisterWindow(ctk.CTkToplevel):
         
         # Window configuration
         self.title("OmniAssist Registration")
-        self.geometry("450x600")
+        self.geometry("450x700")
         self.resizable(False, False)
         
         # Center window
         self.update_idletasks()
         x = (self.winfo_screenwidth() // 2) - (450 // 2)
-        y = (self.winfo_screenheight() // 2) - (600 // 2)
-        self.geometry(f"450x600+{x}+{y}")
+        y = (self.winfo_screenheight() // 2) - (700 // 2)
+        self.geometry(f"450x700+{x}+{y}")
         
         # Make modal
         self.transient(parent)
