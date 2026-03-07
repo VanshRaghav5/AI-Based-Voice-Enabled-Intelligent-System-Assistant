@@ -167,7 +167,11 @@ class LoginWindow(ctk.CTkToplevel):
         
         admin_creds = ctk.CTkLabel(
             admin_frame,
-            text="Default Admin:\nUsername: admin\nPassword: Admin@123",
+            text=(
+                "Administrator account:\n"
+                "Use the credentials provided during installation.\n"
+                "For security, change the admin password after first login."
+            ),
             font=("Segoe UI", 9),
             text_color="gray75",
             justify="left"
