@@ -78,7 +78,8 @@ def login(username: str, password: str) -> Tuple[bool, str, Optional[str], Optio
     try:
         response = requests.post(
             f"{BASE_URL}/api/auth/login",
-            json={"username": username, "password": password}
+            json={"username": username, "password": password},
+            timeout=10
         )
         
         data = response.json()
@@ -105,7 +106,8 @@ def logout() -> Tuple[bool, str]:
     try:
         response = requests.post(
             f"{BASE_URL}/api/auth/logout",
-            headers=get_auth_headers()
+            headers=get_auth_headers(),
+            timeout=5
         )
         
         clear_token()
@@ -134,7 +136,8 @@ def register(username: str, email: str, password: str) -> Tuple[bool, str]:
                 "username": username,
                 "email": email,
                 "password": password
-            }
+            },
+            timeout=10
         )
         
         data = response.json()
@@ -170,7 +173,8 @@ def verify_token() -> Tuple[bool, Optional[Dict]]:
     try:
         response = requests.get(
             f"{BASE_URL}/api/auth/verify",
-            headers=get_auth_headers()
+            headers=get_auth_headers(),
+            timeout=5
         )
         
         if response.status_code == 200:
@@ -185,29 +189,34 @@ def verify_token() -> Tuple[bool, Optional[Dict]]:
 
 
 def process_command(command: str):
+    """Process a command with extended timeout for LLM operations."""
     return requests.post(
         f"{BASE_URL}/api/process_command",
         json={"command": command},
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=120  # 2 minutes for LLM + confirmation workflows
     )
 
 def start_listening():
     return requests.post(
         f"{BASE_URL}/api/start_listening",
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=5
     )
 
 def stop_listening():
     return requests.post(
         f"{BASE_URL}/api/stop_listening",
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=5
     )
 
 def send_confirmation(approved: bool):
     return requests.post(
         f"{BASE_URL}/api/confirm",
         json={"approved": approved},
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=10
     )
 
 def update_settings(settings: dict):
@@ -215,12 +224,14 @@ def update_settings(settings: dict):
     return requests.post(
         f"{BASE_URL}/api/settings",
         json=settings,
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=10
     )
 
 def get_settings():
     """Get current backend settings."""
     return requests.get(
         f"{BASE_URL}/api/settings",
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=5
     )
