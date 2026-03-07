@@ -1,6 +1,5 @@
 """Settings manager for desktop UI."""
 import json
-import os
 from pathlib import Path
 
 
