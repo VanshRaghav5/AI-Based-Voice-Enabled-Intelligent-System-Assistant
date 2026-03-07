@@ -61,8 +61,9 @@ class AssistantController:
             
             # Check if confirmation is required
             if results and results[-1].get("status") == "confirmation_required":
-                # Store plan for later confirmation
+                # Store plan and step index for later confirmation
                 self.pending_plan = plan_data
+                self.pending_step_index = results[-1].get("step_index", 0)
                 confirm_msg = results[-1].get("message", "Confirm action?")
                 confirm_msg = persona.stylize_response(confirm_msg, status="confirmation_required")
                 logger.info(f"[AssistantController] Waiting for confirmation: {confirm_msg}")

@@ -48,7 +48,7 @@ class MultiExecutor:
                 return results
             steps = plan.steps
 
-        for step in steps:
+        for step_index, step in enumerate(steps):
             logger.info(f"[MultiExecutor] Executing step: {step}")
             
             # Extract tool name and arguments - handle both dict and object formats
@@ -95,6 +95,7 @@ class MultiExecutor:
                     "message": confirm_msg,
                     "tool_name": tool_name,
                     "tool_args": tool_args,
+                    "step_index": step_index,
                     "data": {}
                 })
                 logger.info(f"[MultiExecutor] Confirmation required: {confirm_msg}")

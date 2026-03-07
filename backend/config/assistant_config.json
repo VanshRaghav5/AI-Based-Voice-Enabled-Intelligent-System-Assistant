@@ -17,7 +17,7 @@
   },
   "stt": {
     "model": "tiny.en",
-    "language": "hinglish",
+    "language": "en",
     "beam_size": 3,
     "best_of": 3,
     "no_speech_threshold": 0.35,

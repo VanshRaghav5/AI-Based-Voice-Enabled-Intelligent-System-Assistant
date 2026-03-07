@@ -32,7 +32,7 @@ class ToolAgent:
             
             # Create tool call
             from backend.core.tool_call import ToolCall
-            tool_call = ToolCall(name=tool_name, params=params)
+            tool_call = ToolCall(name=tool_name, args=params)
             
             # Execute the tool
             result = self.executor.run(tool_call)

@@ -1,5 +1,6 @@
 """Authentication service with password hashing and JWT token management."""
 
+import os
 import bcrypt
 import jwt
 from datetime import datetime, timedelta
@@ -9,7 +10,9 @@ from backend.database.models import User, Session as SessionModel
 
 
 # JWT Configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # TODO: Move to environment variable
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY environment variable must be set for JWT signing")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 
