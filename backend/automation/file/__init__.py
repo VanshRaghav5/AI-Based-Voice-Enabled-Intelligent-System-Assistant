@@ -4,6 +4,8 @@ from .file_operations import (
     FileCreateTool,
     FileDeleteTool,
     FileMoveTool,
+    FileDeleteHistoryTool,
+    FileOpenRecycleBinTool,
 )
 from .folder_operations import FolderCreateTool, FolderDeleteTool
 from .file_search import FileSearchTool
@@ -13,6 +15,8 @@ __all__ = [
     "FileCreateTool",
     "FileDeleteTool",
     "FileMoveTool",
+    "FileDeleteHistoryTool",
+    "FileOpenRecycleBinTool",
     "FolderCreateTool",
     "FolderDeleteTool",
     "FileSearchTool",
