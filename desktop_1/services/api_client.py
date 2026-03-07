@@ -198,12 +198,16 @@ def start_listening():
     )
 
 def stop_listening():
-    return requests.post(f"{BASE_URL}/api/stop_listening")
+    return requests.post(
+        f"{BASE_URL}/api/stop_listening",
+        headers=get_auth_headers()
+    )
 
 def send_confirmation(approved: bool):
     return requests.post(
         f"{BASE_URL}/api/confirm",
-        json={"approved": approved}
+        json={"approved": approved},
+        headers=get_auth_headers()
     )
 
 def update_settings(settings: dict):
@@ -216,4 +220,7 @@ def update_settings(settings: dict):
 
 def get_settings():
     """Get current backend settings."""
-    return requests.get(f"{BASE_URL}/api/settings")
+    return requests.get(
+        f"{BASE_URL}/api/settings",
+        headers=get_auth_headers()
+    )
