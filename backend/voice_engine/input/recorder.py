@@ -152,10 +152,6 @@ def _save_and_validate(audio: np.ndarray, sample_rate: int) -> str:
 
     except Exception as e:
         logger.error(f"[Recorder Error] {e}")
-        raise
-    
-    except Exception as e:
-        logger.error(f"[Recorder Error] {e}")
         import traceback
         logger.error(f"[Recorder Traceback] {traceback.format_exc()}")
         raise
