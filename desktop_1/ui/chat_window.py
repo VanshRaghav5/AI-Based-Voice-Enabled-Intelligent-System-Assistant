@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import requests
 from services.api_client import process_command, start_listening, stop_listening, update_settings
 from services.socket_client import sio, connect, is_connected
 from ui.confirmation_popup import show_confirmation
@@ -345,10 +346,10 @@ class ChatWindow(ctk.CTkFrame):
         self.entry.configure(state="disabled")
         self.status_bar.set_processing(True)
         
-        # Set timeout to re-enable input if no response (30 seconds)
+        # Set timeout to re-enable input if no response (3 minutes for LLM + confirmation + email)
         if self.processing_timeout_id:
             self.after_cancel(self.processing_timeout_id)
-        self.processing_timeout_id = self.after(30000, self._on_processing_timeout)
+        self.processing_timeout_id = self.after(180000, self._on_processing_timeout)
         
         # Process command in background thread to avoid blocking UI
         import threading
@@ -357,7 +358,15 @@ class ChatWindow(ctk.CTkFrame):
     def _process_command_async(self, cmd):
         """Process command asynchronously to avoid blocking UI."""
         try:
-            process_command(cmd)
+            response = process_command(cmd)
+            # Check if request succeeded
+            if response.status_code != 200:
+                error_msg = response.json().get('message', 'Command processing failed')
+                self.after(0, lambda: self._on_command_error(error_msg))
+        except requests.exceptions.Timeout:
+            self.after(0, lambda: self._on_command_error("Request timed out. The operation may still be processing."))
+        except requests.exceptions.ConnectionError:
+            self.after(0, lambda: self._on_command_error("Cannot connect to backend. Please ensure it's running."))
         except Exception as e:
             # If HTTP request fails, emit error via socket (if backend is down, this won't work)
             # So we also handle it locally
@@ -489,7 +498,25 @@ class ChatWindow(ctk.CTkFrame):
             self._safe_ui_update(lambda: self.overlay.set_responding())
             self._safe_ui_update(self.mic_visualizer.stop)
             self._safe_ui_update(lambda: self._update_listening_ui(False))
+            # Don't reset input state - keep "Processing..." until confirmed
+            self._safe_ui_update(lambda: self.add_message("⏸ Waiting for confirmation...", sender="system"))
             self._safe_ui_update(lambda: show_confirmation(self, msg))
+
+        @sio.on("confirmation_result")
+        def on_confirmation_result(data):
+            msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
+            status = data.get('status', '') if isinstance(data, dict) else ''
+
+            self._safe_ui_update(lambda: self.overlay.set_responding())
+            self._safe_ui_update(self.mic_visualizer.stop)
+            self._safe_ui_update(lambda: self._update_listening_ui(False))
+
+            if status == 'success':
+                self._safe_ui_update(lambda: self.add_message(msg, sender="assistant", animate=True))
+            else:
+                self._safe_ui_update(lambda: self.add_message(f"❌ {msg}", sender="system"))
+
+            self._safe_ui_update(self._reset_input_state)
         
         @sio.on("listening_status")
         def on_listening_status(data):
