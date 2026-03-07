@@ -1,0 +1,92 @@
+{
+  "assistant": {
+    "active_persona": "professional",
+    "user_title": "sir",
+    "exit_commands": [
+      "exit",
+      "quit",
+      "shutdown",
+      "stop assistant",
+      "goodbye",
+      "close"
+    ]
+  },
+  "recording": {
+    "record_duration": 4,
+    "sample_rate": 16000
+  },
+  "stt": {
+    "model": "tiny.en",
+    "language": "hinglish",
+    "beam_size": 3,
+    "best_of": 3,
+    "no_speech_threshold": 0.35,
+    "initial_prompt": "Common names and words: Swayam.",
+    "text_corrections": {
+      "swam": "Swayam",
+      "sway um": "Swayam",
+      "swayam": "Swayam",
+      "swaim": "Swayam",
+      "swaym": "Swayam",
+      "swa yam": "Swayam",
+      "swaiam": "Swayam",
+      "svayam": "Swayam"
+    }
+  },
+  "tts": {
+    "length_scale": 0.9,
+    "noise_scale": 0.667,
+    "noise_w": 0.8,
+    "timeout_seconds": 10
+  },
+  "llm": {
+    "model": "qwen2.5:7b-instruct-q4_0",
+    "timeout_seconds": 20
+  },
+  "personas": {
+    "butler": {
+      "greeting_prefix": "Certainly",
+      "success_prefix": "Right away",
+      "error_prefix": "Apologies",
+      "confirmation_prefix": "Certainly",
+      "cancel_prefix": "Understood",
+      "shutdown_template": "Shutting down now, {title}. Until next time.",
+      "interrupted_template": "Interrupted, {title}. Standing by.",
+      "error_template": "Apologies, {title}. An internal error occurred.",
+      "confirmation_instruction_template": "Please say yes to proceed, or no to cancel, {title}."
+    },
+    "professional": {
+      "greeting_prefix": "Understood",
+      "success_prefix": "Completed",
+      "error_prefix": "Error",
+      "confirmation_prefix": "Confirmation required",
+      "cancel_prefix": "Cancelled",
+      "shutdown_template": "Shutting down now.",
+      "interrupted_template": "Interrupted. Standing by.",
+      "error_template": "An internal error occurred.",
+      "confirmation_instruction_template": "Please say yes to proceed, or no to cancel."
+    },
+    "friendly": {
+      "greeting_prefix": "Sure",
+      "success_prefix": "Done",
+      "error_prefix": "Sorry",
+      "confirmation_prefix": "Got it",
+      "cancel_prefix": "No problem",
+      "shutdown_template": "Okay, shutting down. See you soon!",
+      "interrupted_template": "No worries, I paused. Ready when you are.",
+      "error_template": "Sorry, something went wrong.",
+      "confirmation_instruction_template": "Say yes to continue, or no to cancel."
+    },
+    "concise": {
+      "greeting_prefix": "OK",
+      "success_prefix": "Done",
+      "error_prefix": "Error",
+      "confirmation_prefix": "Confirm",
+      "cancel_prefix": "Cancelled",
+      "shutdown_template": "Shutting down.",
+      "interrupted_template": "Interrupted.",
+      "error_template": "An error occurred.",
+      "confirmation_instruction_template": "Say yes or no."
+    }
+  }
+}
