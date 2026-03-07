@@ -1,158 +1,144 @@
-# OmniAssist AI - Desktop Interface
+# OmniAssist AI — Desktop Client
 
-Voice-enabled AI assistant with Siri-style fullscreen overlay and real-time audio visualization.
-
-## 🚀 Quick Start
-
-### 1. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Start Backend
-```bash
-python backend/api_service.py
-```
-Backend runs on `http://127.0.0.1:5000`
-
-### 3. Launch Desktop UI
-```bash
-python desktop_1/main.py
-```
-
-## ✨ Key Features
-
-### 🎙️ Siri-Style Voice Interface
-- **Fullscreen Overlay** - Immersive voice interaction experience
-- **Audio-Reactive Orb** - Glowing orb that responds to voice amplitude
-- **Live Transcription** - Real-time speech-to-text display
-- **Smooth Animations** - Fade transitions and breathing effects
-
-### 💬 Modern Chat Interface
-- **Message Bubbles** - User (blue) / Assistant (gray) / System (orange)
-- **Typewriter Effect** - Animated assistant responses
-- **Execution Steps** - Live progress indicators for multi-step tasks
-- **Auto-scroll** - Always shows latest messages
-
-### 📊 Smart Status Indicators
-- 🟢/🔴 **Connection Status** - Backend connectivity
-- 🎤 **Listening** - Active voice capture
-- ⚙️ **Processing** - Command execution
-- 💾 **Memory** / 🎭 **Persona** / 🌐 **Language** - Current settings
-
-### 🎨 Audio Visualization
-- **Real-Time Amplitude** - Microphone input visualization (~30 FPS)
-- **Smooth Interpolation** - Fluid orb size transitions
-- **Background Processing** - Non-blocking audio capture
-
-## 📁 Project Structure
-
-```
-desktop_1/
-├── main.py                      # Application entry point
-├── requirements.txt             # Dependencies
-│
-├── ui/
-│   ├── chat_window.py          # Main chat interface
-│   ├── listening_overlay.py    # Fullscreen Siri overlay
-│   ├── siri_orb.py            # Audio-reactive orb visualizer
-│   ├── status_bar.py          # Status indicators
-│   └── confirmation_popup.py   # Confirmation dialogs
-│
-├── audio/
-│   └── mic_visualizer.py      # Microphone amplitude capture
-│
-└── services/
-    ├── api_client.py          # REST API client
-    └── socket_client.py       # Socket.IO WebSocket client
-```
-
-## 🎯 Usage
-
-### Text Commands
-1. Type command in input field
-2. Press **Enter** or click **Send**
-3. Watch real-time execution steps
-4. Get assistant response with typewriter animation
-
-### Voice Commands
-1. Click **🎙 Start Listening**
-2. **Fullscreen overlay appears** with glowing orb
-3. **Speak** your command - orb reacts to your voice
-4. Watch **live transcript** update
-5. Overlay transitions to **"Processing..."** state
-6. Assistant responds and overlay **fades out**
-
-## 🔧 State Transitions
-
-```
-IDLE → Click "Start Listening" → LISTENING
-  (Overlay shows, orb reacts to voice)
-       ↓ 
-   Voice input complete
-       ↓
-PROCESSING (Orb slow pulse, "Processing..." text)
-       ↓
-   Backend responds
-       ↓
-RESPONDING (Fade out, result in chat)
-       ↓
-    IDLE
-```
-
-## 🔌 Backend Integration
-
-### REST Endpoints
-- `POST /api/process_command` - Submit text command
-- `POST /api/start_listening` - Activate microphone
-- `POST /api/stop_listening` - Deactivate microphone
-- `POST /api/confirm` - Approve/deny confirmations
-
-### Socket.IO Events
-| Event | Purpose |
-|-------|---------|
-| `voice_input` | Live speech transcription |
-| `command_result` | Execution results |
-| `execution_step` | Multi-step progress |
-| `confirmation_required` | Safety confirmations |
-| `listening_status` | Mic state changes |
-| `error` | Error messages |
-
-## 🐛 Troubleshooting
-
-**Backend not connecting:**
-- Ensure backend is running: `python backend/api_service.py`
-- Verify backend URL: `http://127.0.0.1:5000`
-- Check firewall settings
-
-**Microphone not working:**
-- Verify PyAudio installation: `python -c "import pyaudio; print('OK')"`
-- Check system microphone permissions
-- Test with another audio app
-
-**Overlay not showing:**
-- Check console for errors
-- Verify CustomTkinter version: `pip show customtkinter`
-- Restart application
-
-## 📦 Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| `customtkinter` | Modern UI framework |
-| `requests` | HTTP client |
-| `python-socketio` | WebSocket communication |
-| `pyaudio` | Microphone audio capture |
-| `numpy` | Audio amplitude calculation |
-
-## 💡 Example Commands
-
-- `"open YouTube"`
-- `"search for AI tutorials on Google"`
-- `"send WhatsApp message to John saying hello"`
-- `"lock my computer"`
-- `"play music"`
+The desktop front-end for OmniAssist AI. Built with **CustomTkinter**, it provides JWT-authenticated access, a modern chat interface with message bubbles, a Siri-style voice overlay, and real-time Socket.IO communication with the backend.
 
 ---
 
-**Built with ❤️ using CustomTkinter, PyAudio, and NumPy**
+## Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r desktop_1/requirements.txt
+
+# 2. Start the backend (separate terminal)
+python backend/api_service.py
+
+# 3. Launch the desktop client
+python desktop_1/main.py
+```
+
+> Backend must be running on `http://127.0.0.1:5000` before launching the client.
+
+---
+
+## Features
+
+| Area | Details |
+|------|---------|
+| **Authentication** | Login, registration, JWT token persistence (`~/.omniassist/token.json`), auto-verify on startup, logout |
+| **Chat UI** | Message bubbles with avatars (👤 user / 🤖 assistant), system alerts, welcome message, auto-scroll |
+| **Voice Input** | Fullscreen Siri-style overlay, audio-reactive orb, live transcription, push-to-listen |
+| **Settings** | Theme (dark/light), persona, language, memory toggle, font size — persisted to `~/.omniassist/ui_settings.json` |
+| **Real-Time** | Socket.IO events for transcription, execution steps, confirmations, errors |
+| **Thread Safety** | All socket callbacks routed through `_safe_ui_update()` to avoid cross-thread Tkinter crashes |
+
+---
+
+## Application Flow
+
+```
+Launch → Token Check
+           │
+     ┌─────┴─────┐
+  Valid Token   No Token
+     │              │
+  Main App      Login Window ⇄ Register Window
+     │              │
+  Chat Window   On Success → Main App
+     │
+  Logout → Login Window
+```
+
+---
+
+## Project Structure
+
+```
+desktop_1/
+├── main.py                  # App controller — auth flow, window lifecycle
+├── config.py                # App-level configuration
+├── settings_manager.py      # Persistent UI settings (~/.omniassist/)
+├── requirements.txt         # Python dependencies
+│
+├── ui/
+│   ├── chat_window.py       # Chat interface — messages, input, voice, logout
+│   ├── login_window.py      # JWT login form
+│   ├── register_window.py   # User registration form
+│   ├── settings_modal.py    # Settings dialog (theme, persona, language)
+│   ├── listening_overlay.py # Fullscreen voice overlay
+│   ├── siri_orb.py          # Audio-reactive orb animation
+│   ├── status_bar.py        # Connection & state indicators
+│   └── confirmation_popup.py# Safety confirmation dialogs
+│
+├── audio/
+│   └── mic_visualizer.py    # Microphone amplitude capture (~30 FPS)
+│
+└── services/
+    ├── api_client.py        # REST client — auth, commands, settings
+    └── socket_client.py     # Socket.IO client — real-time events
+```
+
+---
+
+## Backend Integration
+
+### REST Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/auth/login` | POST | Authenticate user |
+| `/api/auth/register` | POST | Create account |
+| `/api/auth/verify` | POST | Validate stored JWT |
+| `/api/auth/logout` | POST | Invalidate session |
+| `/api/process_command` | POST | Execute a text command |
+| `/api/start_listening` | POST | Activate voice capture |
+| `/api/stop_listening` | POST | Deactivate voice capture |
+| `/api/confirm` | POST | Approve/deny pending action |
+| `/api/settings` | GET/PUT | Read/update assistant settings |
+
+### Socket.IO Events
+
+| Event | Direction | Purpose |
+|-------|-----------|---------|
+| `voice_input` | Server → Client | Live speech transcription |
+| `command_result` | Server → Client | Execution result |
+| `execution_step` | Server → Client | Multi-step progress update |
+| `confirmation_required` | Server → Client | Safety confirmation prompt |
+| `listening_status` | Server → Client | Mic state change |
+| `error` | Server → Client | Error notification |
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `customtkinter` | Modern themed Tkinter UI |
+| `requests` | HTTP client for REST API |
+| `python-socketio` | Real-time WebSocket communication |
+| `websocket-client` | WebSocket transport layer |
+| `pyaudio` | Microphone audio capture |
+| `numpy` | Audio amplitude processing |
+
+---
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Login window not appearing | Ensure backend is running; check `http://localhost:5000/api/health` |
+| "Connection refused" errors | Start backend first: `python backend/api_service.py` |
+| Microphone not detected | Verify PyAudio: `python -c "import pyaudio; print('OK')"` |
+| UI crashes on socket event | Update to latest codebase — thread-safety wrappers required |
+| Settings not saving | Check write permissions to `~/.omniassist/` |
+
+---
+
+## Local Storage
+
+All user data is stored locally under `~/.omniassist/`:
+
+| File | Contents |
+|------|----------|
+| `token.json` | JWT token + user info (auto-loaded on startup) |
+| `ui_settings.json` | Theme, persona, language, font size preferences |

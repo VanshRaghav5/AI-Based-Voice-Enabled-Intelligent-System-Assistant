@@ -16,6 +16,7 @@ A modular, agent-based voice assistant that runs **entirely on your local machin
 - **Local LLM** (Ollama) understands intent and generates execution plans
 - **17+ automation tools** execute real OS-level actions
 - **Piper TTS** speaks results back naturally
+- JWT-authenticated desktop client with login/registration
 - Falls back to keyword matching when LLM is unavailable — always works
 
 ---
@@ -23,41 +24,49 @@ A modular, agent-based voice assistant that runs **entirely on your local machin
 ## Architecture
 
 ```
-Voice/Text ──► Whisper STT ──► Assistant Controller ──► LLM Client (Ollama / Keyword Fallback)
-                                       │
-                                       ▼
-                                 Execution Plan
-                                       │
-                                       ▼
-                              Multi-Step Executor ──► Tool Registry (17+ tools)
-                                       │
-                                       ▼
-                                 Automation Layer
-                          ┌────────┬────────┬──────────┐
-                          │ Files  │ System │ Apps     │
-                          │ Ops    │ Control│ WhatsApp │
-                          │        │ Volume │ Browser  │
-                          │        │ Power  │ Email    │
-                          └────────┴────────┴──────────┘
-                                       │
-                                       ▼
-                                Piper TTS ──► Voice Response
+                          ┌──────────────────────────┐
+                          │    Desktop Client (CTk)   │
+                          │  Login → Chat → Voice UI  │
+                          └────────┬─────────────────┘
+                                   │ REST + Socket.IO
+                          ┌────────▼─────────────────┐
+                          │   Flask API + WebSocket    │
+                          │  JWT Auth │ Rate Limiting  │
+                          └────────┬─────────────────┘
+                                   │
+               ┌───────────────────┼───────────────────┐
+               ▼                   ▼                   ▼
+        Whisper STT         LLM Client           Piper TTS
+        (offline)        (Ollama / Fallback)      (offline)
+                               │
+                         Execution Plan
+                               │
+                    Multi-Step Executor
+                               │
+              ┌────────┬───────┴───────┬────────┐
+              │ Files  │  System       │  Apps   │
+              │ CRUD   │  Vol/Power    │  Launch │
+              │ Search │  Screenshot   │  URLs   │
+              │        │  Clipboard    │  Email  │
+              └────────┴───────────────┴────────┘
 ```
 
 ---
 
 ## Features
 
-| Category | What You Can Do |
-|---|---|
-| **File Management** | Create, open, delete, move files & folders; file search; safe Recycle Bin deletion with undo history |
-| **System Control** | Volume up/down/mute, lock workstation, shutdown, restart (with confirmation) |
-| **WhatsApp** | Open WhatsApp Desktop, send messages to contacts, open specific chats |
+| Category | Capabilities |
+|----------|-------------|
+| **Authentication** | JWT login/register, bcrypt password hashing, token persistence, role-based access |
+| **File Management** | Create, open, delete, move files & folders; search; safe Recycle Bin with undo |
+| **System Control** | Volume, lock, shutdown, restart (with confirmation), screenshot, clipboard |
+| **WhatsApp** | Open desktop app, send messages, open specific chats |
 | **Browser** | Open URLs, Google search, YouTube — auto-formatted and validated |
 | **Applications** | Launch Chrome, Notepad, Calculator, and more |
-| **Email** | Send emails via SMTP with validation |
+| **Email** | Send via SMTP with validation |
 | **Intelligence** | Multi-step planning, confidence scoring (0.0–1.0), parameter extraction & validation |
-| **Safety** | Confirmation prompts for dangerous actions, window detection, process verification, error recovery |
+| **Safety** | Confirmation prompts for dangerous actions, window detection, error recovery |
+| **Settings** | Theme, persona, language, memory toggle — persisted locally |
 
 ### Command Examples
 
@@ -75,19 +84,20 @@ Voice/Text ──► Whisper STT ──► Assistant Controller ──► LLM Cl
 
 ## How It Works
 
-1. **Input** — Hold `SPACE` (push-to-talk) or press `CTRL+T` (text mode)
-2. **Transcribe** — Whisper converts audio to text
-3. **Understand** — LLM generates a structured execution plan (JSON with tool calls + parameters)
-4. **Validate** — Parameters are extracted, validated, and scored for confidence
-5. **Execute** — Multi-executor runs each step; high-risk actions require voice confirmation
-6. **Respond** — Piper TTS speaks the result
+1. **Authenticate** — Login or register via the desktop client
+2. **Input** — Type a command or click the mic button for voice
+3. **Transcribe** — Whisper converts audio to text (offline)
+4. **Understand** — LLM generates a structured execution plan (JSON with tool calls + parameters)
+5. **Validate** — Parameters are extracted, validated, and scored for confidence
+6. **Execute** — Multi-executor runs each step; high-risk actions require confirmation
+7. **Respond** — Piper TTS speaks the result; chat UI shows message bubbles
 
 ### Confidence-Based Execution
 
 Every command is scored `0.0` to `1.0`:
 
 | Score | Action |
-|---|---|
+|-------|--------|
 | **≥ 0.8** | Auto-execute |
 | **0.5 – 0.8** | Ask confirmation |
 | **0.3 – 0.5** | Request clarification |
@@ -99,239 +109,225 @@ Every command is scored `0.0` to `1.0`:
 
 ```
 AI-Based-Voice-Enabled-Intelligent-System-Assistant/
-├── README.md                  # Main documentation (you are here)
-├── START.bat                  # Simple one-click launcher
-├── launcher.bat               # Debug launcher with logs
-├── pytest.ini                 # Test configuration
-├── requirements-test.txt      # Testing dependencies
+├── README.md
+├── SECURITY_SETUP_GUIDE.md
+├── STRUCTURE.md
+├── START.bat                      # One-click launcher
+├── launcher.bat                   # Debug launcher with logs
+├── pytest.ini
+├── requirements-test.txt
 │
-├── backend/                   # Core backend system
-│   ├── api_service.py        # Flask REST + WebSocket API (main entry)
-│   ├── requirements.txt      # Backend dependencies
-│   ├── agents/               # Intent, planner, safety, tool agents
-│   ├── automation/           # All automation tools (49 tools)
-│   │   ├── app_launcher.py
-│   │   ├── browser_control.py
-│   │   ├── whatsapp_desktop.py
-│   │   ├── email_tool.py
-│   │   ├── system/           # Volume, power, screenshot, clipboard, etc.
-│   │   └── file/             # File operations, search
-│   ├── config/               # Logger, settings, assistant config
-│   ├── core/                 # Orchestration, parsing, execution, tool registry
-│   ├── llm/                  # LLM client, parameter extraction & validation
-│   ├── voice_engine/         # Whisper STT, Piper TTS, audio pipeline
-│   ├── memory/               # Session state & conversation history
-│   └── data/                 # Runtime data, audio files
+├── backend/                       # Core backend
+│   ├── api_service.py             # Flask REST + WebSocket API (entry point)
+│   ├── requirements.txt
+│   │
+│   ├── auth/                      # Authentication
+│   │   └── auth_service.py        # JWT token generation, validation, bcrypt
+│   │
+│   ├── middleware/                 # Request middleware
+│   │   ├── auth_middleware.py      # JWT route protection
+│   │   └── validation.py          # Marshmallow input schemas
+│   │
+│   ├── database/                  # Persistence
+│   │   └── models.py              # SQLAlchemy User model
+│   │
+│   ├── agents/                    # AI agents
+│   │   ├── intent_agent.py        # Intent classification
+│   │   ├── planner_agent.py       # Execution planning
+│   │   ├── safety_agent.py        # Risk assessment
+│   │   └── tool_agent.py          # Tool selection
+│   │
+│   ├── automation/                # Automation tools
+│   │   ├── app_launcher.py        # Application launching
+│   │   ├── browser_control.py     # URL/search/YouTube
+│   │   ├── whatsapp_desktop.py    # WhatsApp messaging
+│   │   ├── email_tool.py          # SMTP email
+│   │   ├── system_control.py      # Volume, lock, power
+│   │   ├── file_manager.py        # File CRUD operations
+│   │   ├── window_detection.py    # Window state detection
+│   │   ├── error_handler.py       # Error recovery
+│   │   ├── system/                # Volume, power, screenshot, clipboard, etc.
+│   │   └── file/                  # File ops, search, folder ops, delete history
+│   │
+│   ├── core/                      # Orchestration
+│   │   ├── assistant_controller.py# Main controller
+│   │   ├── command_parser.py      # NLP command parsing
+│   │   ├── tool_registry.py       # Tool discovery & dispatch
+│   │   ├── multi_executor.py      # Multi-step execution
+│   │   ├── confidence_tracker.py  # Confidence scoring
+│   │   └── execution_plan.py      # Plan data structures
+│   │
+│   ├── llm/                       # Language model
+│   │   ├── llm_client.py          # Ollama client + keyword fallback
+│   │   ├── parameter_extractor.py # Parameter extraction
+│   │   └── parameter_validator.py # Parameter validation
+│   │
+│   ├── voice_engine/              # Speech I/O
+│   │   ├── audio_pipeline.py      # Audio processing pipeline
+│   │   ├── stt/                   # Whisper speech-to-text
+│   │   └── tts/                   # Piper text-to-speech
+│   │
+│   ├── memory/                    # State management
+│   │   ├── memory_store.py        # Conversation history
+│   │   ├── session_state.py       # Session state
+│   │   └── state_schema.py        # State data models
+│   │
+│   └── config/                    # Configuration
+│       ├── assistant_config.py    # Assistant settings
+│       ├── assistant_config.json  # Config file
+│       ├── settings.py            # App settings
+│       └── logger.py              # Logging setup
 │
-├── desktop_1/                 # Desktop UI (CustomTkinter)
-│   ├── main.py               # UI entry point
-│   ├── requirements.txt      # Desktop dependencies
-│   ├── ui/                   # Chat window, overlays, visualizers
-│   └── services/             # API client, socket client
+├── desktop_1/                     # Desktop UI (CustomTkinter)
+│   ├── main.py                    # App controller — auth flow, window lifecycle
+│   ├── settings_manager.py        # Persistent UI settings (~/.omniassist/)
+│   ├── requirements.txt
+│   ├── ui/
+│   │   ├── chat_window.py         # Chat interface — bubbles, input, voice, logout
+│   │   ├── login_window.py        # JWT login form
+│   │   ├── register_window.py     # User registration form
+│   │   ├── settings_modal.py      # Settings dialog
+│   │   ├── listening_overlay.py   # Fullscreen Siri-style voice overlay
+│   │   ├── siri_orb.py            # Audio-reactive orb animation
+│   │   ├── status_bar.py          # Connection & state indicators
+│   │   └── confirmation_popup.py  # Safety confirmation dialogs
+│   ├── audio/
+│   │   └── mic_visualizer.py      # Microphone amplitude capture
+│   └── services/
+│       ├── api_client.py          # REST client — auth, commands, settings
+│       └── socket_client.py       # Socket.IO real-time client
 │
-├── cli/                       # Command-line interfaces
-│   ├── app.py                # Full CLI voice loop with confirmation
-│   └── test.py               # Simple test CLI
+├── cli/                           # Command-line interfaces
+│   ├── app.py                     # Full CLI voice loop with confirmation
+│   └── test.py                    # Simple test CLI
 │
-├── docs/                      # Documentation
+├── tests/                         # 90+ unit tests (fully mocked)
+├── docs/                          # Documentation
 │   ├── API_DOCUMENTATION.md
+│   ├── SECURITY_IMPLEMENTATION.md
 │   ├── SYSTEM_CAPABILITIES.md
-│   ├── COMMAND_PARSING_SUMMARY.md
-│   ├── CONFIDENCE_SYSTEM_SUMMARY.md
-│   ├── TESTING_SUMMARY.md
-│   ├── COMPLETE_INSTALLATION_GUIDE.md
-│   └── reports/              # Development reports
-│       ├── AUTOMATION_STATUS_REPORT.md
-│       ├── AUTOMATION_TEST_REPORT.md
-│       ├── COMPLETE_FIX_REPORT.md
-│       └── LLM_FIX_REPORT.md
-│
-├── examples/                  # Example code & usage patterns
-├── tests/                     # 90+ unit tests (fully mocked)
-├── logs/                      # Runtime logs (auto-created)
-└── venv/                      # Python virtual environment
+│   ├── SETTINGS_DOCUMENTATION.md
+│   └── reports/                   # Dev reports
+└── examples/                      # Example code & usage patterns
 ```
 
 ---
 
 ## Getting Started
 
-### Quick Start (Recommended)
-
-**For regular users:**
-```bash
-# Just double-click:
-START.bat
-```
-
-**For developers/debugging:**
-```bash
-# Shows detailed logs:
-launcher.bat
-```
-
 ### Prerequisites
 
 - **OS:** Windows 10/11
-- **Python:** 3.8+
+- **Python:** 3.10+ (3.12 recommended)
 - **GPU:** NVIDIA (optional, speeds up Whisper)
 - **Ollama:** Optional — system works without it via keyword fallback
 
-### First Time Installation
+### Installation
 
-#### 1. Clone Repository
 ```bash
+# 1. Clone
 git clone https://github.com/your-repo/AI-Voice-Assistant.git
 cd AI-Based-Voice-Enabled-Intelligent-System-Assistant
-```
 
-#### 2. Setup Python Environment
-```bash
+# 2. Create virtual environment
 python -m venv venv
 .\venv\Scripts\activate
+
+# 3. Install dependencies
 pip install -r backend/requirements.txt
 pip install -r desktop_1/requirements.txt
-```
 
-#### 3. Install Ollama (Recommended)
-```bash
+# 4. (Optional) Install Ollama for LLM-powered understanding
 # Download from https://ollama.ai, then:
 ollama pull qwen2.5:7b-instruct-q4_0
 ```
 
-> **Note:** Without Ollama, the system uses built-in keyword matching — fully functional but less intelligent.
+> Without Ollama, the system uses built-in keyword matching — fully functional but less intelligent.
 
-#### 4. Configure Email (Optional)
+### Launch
+
+**One-click (recommended):**
 ```bash
-set SMTP_HOST=smtp.gmail.com
-set SMTP_PORT=587
-set SMTP_USER=your-email@gmail.com
-set SMTP_PASSWORD=your-app-password
+START.bat
 ```
 
-#### 5. Launch
+**Debug mode (shows logs):**
 ```bash
-# Simple launcher (recommended)
-START.bat
-
-# Or debug mode with logs
 launcher.bat
+```
+
+**Manual:**
+```bash
+# Terminal 1 — Backend
+python backend/api_service.py
+
+# Terminal 2 — Desktop UI
+python desktop_1/main.py
 ```
 
 ---
 
-## Running
+## API Reference
 
-### Mode 1: Desktop UI (Recommended)
-
-**Simple Launch:**
-```bash
-START.bat
-```
-- Starts backend API automatically
-- Opens desktop UI
-- Runs in background
-- Best for regular use
-
-**Debug Launch:**
-```bash
-launcher.bat
-```
-- Shows detailed logs
-- Checks Ollama status
-- Displays errors
-- Keeps console open
-- Best for troubleshooting
-
-### Mode 2: Manual CLI Voice Loop
-
-```bash
-python cli/app.py
-```
-
-Hold `SPACE` to talk, `CTRL+T` to type. Say `exit` to quit.
-
-### Mode 3: Backend API Only
-
-```bash
-python backend/api_service.py
-```
-
-The API exposes REST endpoints and WebSocket events for real-time communication:
+### Authentication
 
 | Endpoint | Method | Purpose |
-|---|---|---|
-| `/api/status` | GET | Assistant status |
-| `/api/process_command` | POST | Send a text command |
-| `/api/start_listening` | POST | Start voice mode |
-| `/api/stop_listening` | POST | Stop voice mode |
+|----------|--------|---------|
+| `/api/auth/register` | POST | Create account |
+| `/api/auth/login` | POST | Authenticate, receive JWT |
+| `/api/auth/logout` | POST | Invalidate session |
+| `/api/auth/verify` | GET | Validate stored token |
+
+### Assistant
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/process_command` | POST | Execute a text command |
+| `/api/start_listening` | POST | Start voice capture |
+| `/api/stop_listening` | POST | Stop voice capture |
 | `/api/confirm` | POST | Approve/reject pending action |
-| `/api/health` | GET | Backend health check |
+| `/api/speak` | POST | Text-to-speech output |
+| `/api/settings` | GET/POST | Read/update settings |
+| `/api/status` | GET | Assistant status |
+| `/api/health` | GET | Health check |
+
+### Socket.IO Events
+
+| Event | Direction | Purpose |
+|-------|-----------|---------|
+| `voice_input` | Server → Client | Live speech transcription |
+| `command_result` | Server → Client | Execution result |
+| `execution_step` | Server → Client | Multi-step progress |
+| `confirmation_required` | Server → Client | Safety confirmation |
+| `listening_status` | Server → Client | Mic state change |
+| `error` | Server → Client | Error notification |
+| `send_command` | Client → Server | Submit command via socket |
 
 See [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) for full reference.
 
 ---
 
-## Troubleshooting
+## Security
 
-### Backend Won't Start
-```powershell
-# Check logs
-type logs\backend.log
+| Layer | Implementation |
+|-------|---------------|
+| **Authentication** | JWT tokens (PyJWT + Flask-JWT-Extended) |
+| **Password Hashing** | bcrypt with salt rounds |
+| **Input Validation** | Marshmallow schemas with field-level validators |
+| **SQL Injection** | SQLAlchemy ORM (parameterized queries) |
+| **Rate Limiting** | Flask-Limiter on auth endpoints |
+| **Token Storage** | Local file (`~/.omniassist/token.json`) |
 
-# Manual start to see errors
-.\venv\Scripts\python.exe backend\api_service.py
-```
-
-### Ollama Not Running
-```powershell
-# Start Ollama server
-ollama serve
-
-# In another terminal, verify it's running
-ollama ps
-
-# Test API
-curl http://localhost:11434/api/tags
-```
-
-### Dependencies Missing
-```powershell
-# Reinstall backend dependencies
-.\venv\Scripts\pip install -r backend\requirements.txt
-
-# Reinstall desktop dependencies
-.\venv\Scripts\pip install -r desktop_1\requirements.txt
-```
-
-### Connection Timeout
-```powershell
-# Increase timeout in backend/config/assistant_config.json
-{
-  "llm": {
-    "timeout_seconds": 30
-  }
-}
-```
-
-### UI Won't Connect
-- Ensure backend is running first
-- Check `http://localhost:5000/api/health` in browser
-- Verify firewall isn't blocking port 5000
+See [SECURITY_SETUP_GUIDE.md](SECURITY_SETUP_GUIDE.md) and [docs/SECURITY_IMPLEMENTATION.md](docs/SECURITY_IMPLEMENTATION.md).
 
 ---
 
 ## Testing
 
 ```bash
-# Install test dependencies
 pip install -r requirements-test.txt
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=backend --cov-report=html
+pytest                                    # Run all tests
+pytest --cov=backend --cov-report=html    # With coverage report
 ```
 
 **90+ tests** covering STT, TTS, intent parsing, file operations, tool registry, error handling, command parsing, confidence tracking — all fully mocked, no real side effects.
@@ -341,26 +337,42 @@ pytest --cov=backend --cov-report=html
 ## Tech Stack
 
 | Component | Technology |
-|---|---|
-| Language | Python 3.8+ |
-| STT | OpenAI Whisper (offline, GPU) |
+|-----------|-----------|
+| Language | Python 3.10+ |
+| STT | OpenAI Whisper (offline, GPU-accelerated) |
 | TTS | Piper TTS (offline) |
 | LLM | Ollama (Qwen 2.5 7B) + keyword fallback |
 | API | Flask + Flask-SocketIO |
+| Auth | PyJWT, bcrypt, Flask-JWT-Extended |
+| Database | SQLAlchemy (SQLite) |
+| Validation | Marshmallow, Pydantic |
+| Desktop UI | CustomTkinter |
 | Automation | pyautogui, keyboard, subprocess |
 | Testing | pytest, pytest-cov, pytest-mock |
 
 ---
 
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Backend won't start | Check `logs/backend.log` or run `python backend/api_service.py` directly |
+| Ollama not responding | Run `ollama serve`, verify with `curl http://localhost:11434/api/tags` |
+| UI won't connect | Ensure backend is running; check `http://localhost:5000/api/health` |
+| Login window not appearing | Backend must be running before launching desktop client |
+| Dependencies missing | `pip install -r backend/requirements.txt -r desktop_1/requirements.txt` |
+| Connection timeout | Increase `timeout_seconds` in `backend/config/assistant_config.json` |
+
+---
+
 ## Future Scope
 
-- **Contextual multi-turn conversations** — maintain deeper dialogue state across commands
-- **Plugin system** — allow third-party tool development and hot-loading
-- **GUI dashboard** — visual command history, analytics, and system monitoring
-- **Cross-platform support** — extend to macOS and Linux
-- **Advanced permission model** — role-based access control for shared environments
-- **Wake word detection** — hands-free activation without push-to-talk
-- **Multilingual support** — extend STT/TTS to other languages
+- Contextual multi-turn conversations
+- Plugin system for third-party tools
+- Visual dashboard with command history and analytics
+- Cross-platform support (macOS, Linux)
+- Wake word detection for hands-free activation
+- Multilingual STT/TTS support
 
 ---
 
@@ -368,7 +380,3 @@ pytest --cov=backend --cov-report=html
 
 - **Vansh Raghav** — Voice & Automation Core
 - Team Members — LLM Integration, UI & Deployment
-
----
-
-> **Status:** Production-ready local automation system with scalable agent architecture.
