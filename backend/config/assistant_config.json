@@ -17,7 +17,7 @@
   },
   "stt": {
     "model": "tiny.en",
-    "language": "hinglish",
+    "language": "en",
     "beam_size": 3,
     "best_of": 3,
     "no_speech_threshold": 0.35,
@@ -42,6 +42,12 @@
   "llm": {
     "model": "qwen2.5:7b-instruct-q4_0",
     "timeout_seconds": 20
+  },
+  "wake_word": {
+    "enabled": true,
+    "words": ["otto", "hey otto", "ok otto", "okay otto"],
+    "listen_duration": 1.5,
+    "sensitivity": "medium"
   },
   "personas": {
     "butler": {

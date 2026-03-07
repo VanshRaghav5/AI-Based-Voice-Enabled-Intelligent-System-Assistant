@@ -1,5 +1,6 @@
 import customtkinter as ctk
-from services.api_client import process_command, start_listening, stop_listening, update_settings
+import requests
+from services.api_client import process_command, start_listening, stop_listening, update_settings, start_wake_word, stop_wake_word, get_wake_word_status
 from services.socket_client import sio, connect, is_connected
 from ui.confirmation_popup import show_confirmation
 from ui.status_bar import StatusBar
@@ -157,7 +158,29 @@ class ChatWindow(ctk.CTkFrame):
             border_color="#4A9EFF" if self.is_dark else "#2B5EFF",
             command=self.toggle_listen
         )
-        self.listen_btn.pack(side="left")
+        self.listen_btn.pack(side="left", padx=(0, 8))
+
+        # Wake word toggle button
+        wakeword_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+        wakeword_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+        wakeword_text = "#9B59B6" if self.is_dark else "#8E44AD"
+        
+        self.wakeword_btn = ctk.CTkButton(
+            controls_frame, 
+            text="💤 Wake Word: OFF", 
+            height=38,
+            corner_radius=19,
+            fg_color=wakeword_bg,
+            hover_color=wakeword_hover,
+            text_color=wakeword_text,
+            font=("Inter", 11),
+            border_width=2,
+            border_color="#9B59B6" if self.is_dark else "#8E44AD",
+            command=self.toggle_wake_word
+        )
+        self.wakeword_btn.pack(side="left")
+        
+        self.wake_word_active = False
 
         # Professional status bar at bottom
         self.status_bar = StatusBar(self)
@@ -316,6 +339,13 @@ class ChatWindow(ctk.CTkFrame):
         if success:
             self.status_bar.set_connected(True)
             self.add_message("✓ Connected to backend. Ready to assist!", sender="system")
+            # Sync wake-word button state with backend.
+            try:
+                wake_status = get_wake_word_status()
+                if wake_status is not None:
+                    self._update_wake_word_ui(bool(wake_status.get("active", False)))
+            except Exception as e:
+                print(f"Error syncing wake word status: {e}")
         else:
             self.status_bar.set_connected(False)
             self.add_message(
@@ -345,10 +375,10 @@ class ChatWindow(ctk.CTkFrame):
         self.entry.configure(state="disabled")
         self.status_bar.set_processing(True)
         
-        # Set timeout to re-enable input if no response (30 seconds)
+        # Set timeout to re-enable input if no response (3 minutes for LLM + confirmation + email)
         if self.processing_timeout_id:
             self.after_cancel(self.processing_timeout_id)
-        self.processing_timeout_id = self.after(30000, self._on_processing_timeout)
+        self.processing_timeout_id = self.after(180000, self._on_processing_timeout)
         
         # Process command in background thread to avoid blocking UI
         import threading
@@ -357,7 +387,15 @@ class ChatWindow(ctk.CTkFrame):
     def _process_command_async(self, cmd):
         """Process command asynchronously to avoid blocking UI."""
         try:
-            process_command(cmd)
+            response = process_command(cmd)
+            # Check if request succeeded
+            if response.status_code != 200:
+                error_msg = response.json().get('message', 'Command processing failed')
+                self.after(0, lambda: self._on_command_error(error_msg))
+        except requests.exceptions.Timeout:
+            self.after(0, lambda: self._on_command_error("Request timed out. The operation may still be processing."))
+        except requests.exceptions.ConnectionError:
+            self.after(0, lambda: self._on_command_error("Cannot connect to backend. Please ensure it's running."))
         except Exception as e:
             # If HTTP request fails, emit error via socket (if backend is down, this won't work)
             # So we also handle it locally
@@ -393,11 +431,22 @@ class ChatWindow(ctk.CTkFrame):
             return
         
         if not self.listening:
-            start_listening()
-            self._update_listening_ui(True)
+            # Try to start listening on backend
+            success = start_listening()
+            if success:
+                self._update_listening_ui(True)
+                self.add_message("🎙 Voice listening started. Speak clearly into your microphone.", sender="system")
+            else:
+                self.add_message("⚠ Failed to start voice listening. Check backend logs for errors.", sender="system")
         else:
-            stop_listening()
-            self._update_listening_ui(False)
+            # Try to stop listening on backend
+            success = stop_listening()
+            if success:
+                self._update_listening_ui(False)
+                self.add_message("⏹ Voice listening stopped.", sender="system")
+            else:
+                # Even if stop fails, update UI to prevent stuck state
+                self._update_listening_ui(False)
 
     def _update_listening_ui(self, is_listening):
         """Update listening indicators and overlay in a thread-safe way."""
@@ -432,6 +481,84 @@ class ChatWindow(ctk.CTkFrame):
                 self.mic_visualizer.stop()
         except Exception as e:
             print(f"Error updating listening UI: {e}")
+    
+    def toggle_wake_word(self):
+        """Toggle wake word detection on/off."""
+        if not is_connected():
+            self.add_message("⚠ Cannot toggle wake word: backend not connected.", sender="system")
+            self.attempt_connection()
+            return
+        
+        if not self.wake_word_active:
+            # Start wake word detection
+            success = start_wake_word()
+            if success:
+                self.wake_word_active = True
+                self.wakeword_btn.configure(
+                    text="👂 Wake Word: ON",
+                    fg_color="#27AE60",
+                    hover_color="#229954",
+                    text_color="white",
+                    border_color="#27AE60"
+                )
+                self.add_message("👂 Wake word detection enabled. Say 'Otto' to start listening.", sender="system")
+            else:
+                self.add_message("⚠ Failed to start wake word detection.", sender="system")
+        else:
+            # Stop wake word detection
+            success = stop_wake_word()
+            if success:
+                self.wake_word_active = False
+                wakeword_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+                wakeword_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+                wakeword_text = "#9B59B6" if self.is_dark else "#8E44AD"
+                self.wakeword_btn.configure(
+                    text="💤 Wake Word: OFF",
+                    fg_color=wakeword_bg,
+                    hover_color=wakeword_hover,
+                    text_color=wakeword_text,
+                    border_color="#9B59B6" if self.is_dark else "#8E44AD"
+                )
+                self.add_message("💤 Wake word detection disabled.", sender="system")
+            else:
+                # Even if stop fails, update UI to prevent stuck state
+                self.wake_word_active = False
+                wakeword_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+                wakeword_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+                wakeword_text = "#9B59B6" if self.is_dark else "#8E44AD"
+                self.wakeword_btn.configure(
+                    text="💤 Wake Word: OFF",
+                    fg_color=wakeword_bg,
+                    hover_color=wakeword_hover,
+                    text_color=wakeword_text,
+                    border_color="#9B59B6" if self.is_dark else "#8E44AD"
+                )
+    
+    def _update_wake_word_ui(self, is_active):
+        """Update wake word button UI to match backend state."""
+        try:
+            self.wake_word_active = is_active
+            if is_active:
+                self.wakeword_btn.configure(
+                    text="👂 Wake Word: ON",
+                    fg_color="#27AE60",
+                    hover_color="#229954",
+                    text_color="white",
+                    border_color="#27AE60"
+                )
+            else:
+                wakeword_bg = "#2D2D2D" if self.is_dark else "#E0E0E0"
+                wakeword_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
+                wakeword_text = "#9B59B6" if self.is_dark else "#8E44AD"
+                self.wakeword_btn.configure(
+                    text="💤 Wake Word: OFF",
+                    fg_color=wakeword_bg,
+                    hover_color=wakeword_hover,
+                    text_color=wakeword_text,
+                    border_color="#9B59B6" if self.is_dark else "#8E44AD"
+                )
+        except Exception as e:
+            print(f"Error updating wake word UI: {e}")
     
     def _safe_ui_update(self, callback):
         """Safely schedule a UI update from any thread."""
@@ -489,12 +616,40 @@ class ChatWindow(ctk.CTkFrame):
             self._safe_ui_update(lambda: self.overlay.set_responding())
             self._safe_ui_update(self.mic_visualizer.stop)
             self._safe_ui_update(lambda: self._update_listening_ui(False))
+            # Don't reset input state - keep "Processing..." until confirmed
+            self._safe_ui_update(lambda: self.add_message("⏸ Waiting for confirmation...", sender="system"))
             self._safe_ui_update(lambda: show_confirmation(self, msg))
+
+        @sio.on("confirmation_result")
+        def on_confirmation_result(data):
+            msg = data.get('message', str(data)) if isinstance(data, dict) else str(data)
+            status = data.get('status', '') if isinstance(data, dict) else ''
+
+            self._safe_ui_update(lambda: self.overlay.set_responding())
+            self._safe_ui_update(self.mic_visualizer.stop)
+            self._safe_ui_update(lambda: self._update_listening_ui(False))
+
+            if status == 'success':
+                self._safe_ui_update(lambda: self.add_message(msg, sender="assistant", animate=True))
+            else:
+                self._safe_ui_update(lambda: self.add_message(f"❌ {msg}", sender="system"))
+
+            self._safe_ui_update(self._reset_input_state)
         
         @sio.on("listening_status")
         def on_listening_status(data):
             is_listening = data.get('listening', False)
             self._safe_ui_update(lambda: self._update_listening_ui(is_listening))
+
+        @sio.on("wake_word_status")
+        def on_wake_word_status(data):
+            is_active = data.get('active', False) if isinstance(data, dict) else False
+            self._safe_ui_update(lambda: self._update_wake_word_ui(is_active))
+
+        @sio.on("wake_word_detected")
+        def on_wake_word_detected(data):
+            detected = data.get('word', 'wake word') if isinstance(data, dict) else str(data)
+            self._safe_ui_update(lambda: self.add_message(f"👂 '{detected}' detected. Listening...", sender="system"))
         
         @sio.on("assistant_shutdown")
         def on_shutdown(data):
