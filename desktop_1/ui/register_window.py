@@ -2,7 +2,6 @@
 
 import customtkinter as ctk
 from typing import Callable, Optional
-import re
 
 
 class RegisterWindow(ctk.CTkToplevel):
