@@ -21,6 +21,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from backend.core.assistant_controller import AssistantController
 from backend.voice_engine.audio_pipeline import listen_for_gui_adaptive, speak
+from backend.voice_engine.wake_word_detector import WakeWordDetector
 from backend.config.logger import logger
 from backend.core.persona import persona
 from backend.config.assistant_config import assistant_config
@@ -53,6 +54,7 @@ controller = AssistantController()
 is_listening = False
 pending_confirmation: Optional[Dict[str, Any]] = None
 listening_thread: Optional[threading.Thread] = None
+wake_word_detector: Optional[WakeWordDetector] = None
 
 # Cache for recent commands to avoid duplicate processing
 _command_cache = {}
@@ -190,20 +192,26 @@ def start_listening():
     """
     global is_listening, listening_thread
     
-    if is_listening:
-        return jsonify({'message': 'Already listening', 'listening': True}), 200
-    
-    is_listening = True
-    listening_thread = threading.Thread(target=voice_loop, daemon=True)
-    listening_thread.start()
-    
-    logger.info("[API] Voice listening started")
-    socketio.emit('listening_status', {'listening': True})
-    
-    return jsonify({'message': 'Listening started', 'listening': True})
+    try:
+        if is_listening:
+            return jsonify({'message': 'Already listening', 'listening': True}), 200
+        
+        is_listening = True
+        listening_thread = threading.Thread(target=voice_loop, daemon=True)
+        listening_thread.start()
+        
+        logger.info("[API] Voice listening started")
+        socketio.emit('listening_status', {'listening': True})
+        
+        return jsonify({'message': 'Listening started', 'listening': True})
+    except Exception as e:
+        logger.error(f"[API] Error starting voice listening: {e}", exc_info=True)
+        is_listening = False
+        return jsonify({'error': f'Failed to start listening: {str(e)}'}), 500
 
 
 @app.route('/api/stop_listening', methods=['POST'])
+@login_required
 def stop_listening():
     """
     Stop voice listening mode
@@ -213,15 +221,94 @@ def stop_listening():
     """
     global is_listening
     
-    if not is_listening:
-        return jsonify({'message': 'Not currently listening', 'listening': False}), 200
+    try:
+        if not is_listening:
+            return jsonify({'message': 'Not currently listening', 'listening': False}), 200
+        
+        is_listening = False
+        
+        logger.info("[API] Voice listening stopped")
+        socketio.emit('listening_status', {'listening': False})
+        
+        return jsonify({'message': 'Listening stopped', 'listening': False})
+    except Exception as e:
+        logger.error(f"[API] Error stopping voice listening: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to stop listening: {str(e)}'}), 500
+
+
+@app.route('/api/wake_word/start', methods=['POST'])
+@login_required
+def start_wake_word():
+    """
+    Start wake word detection
     
-    is_listening = False
+    Returns:
+        JSON confirmation of wake word detection state
+    """
+    global wake_word_detector
     
-    logger.info("[API] Voice listening stopped")
-    socketio.emit('listening_status', {'listening': False})
+    try:
+        if wake_word_detector is None:
+            # Initialize wake word detector with callback
+            wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
+        
+        if wake_word_detector.is_active:
+            return jsonify({'message': 'Wake word detection already active', 'active': True}), 200
+        
+        wake_word_detector.start()
+        logger.info("[API] Wake word detection started")
+        socketio.emit('wake_word_status', {'active': True})
+        
+        return jsonify({'message': 'Wake word detection started', 'active': True})
+    except Exception as e:
+        logger.error(f"[API] Error starting wake word detection: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to start wake word detection: {str(e)}'}), 500
+
+
+@app.route('/api/wake_word/stop', methods=['POST'])
+@login_required
+def stop_wake_word():
+    """
+    Stop wake word detection
     
-    return jsonify({'message': 'Listening stopped', 'listening': False})
+    Returns:
+        JSON confirmation of wake word detection state
+    """
+    global wake_word_detector
+    
+    try:
+        if wake_word_detector is None or not wake_word_detector.is_active:
+            return jsonify({'message': 'Wake word detection not active', 'active': False}), 200
+        
+        wake_word_detector.stop()
+        logger.info("[API] Wake word detection stopped")
+        socketio.emit('wake_word_status', {'active': False})
+        
+        return jsonify({'message': 'Wake word detection stopped', 'active': False})
+    except Exception as e:
+        logger.error(f"[API] Error stopping wake word detection: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to stop wake word detection: {str(e)}'}), 500
+
+
+@app.route('/api/wake_word/status', methods=['GET'])
+@login_required
+def wake_word_status():
+    """
+    Get wake word detection status
+    
+    Returns:
+        JSON with wake word detection state
+    """
+    global wake_word_detector
+    
+    is_active = wake_word_detector is not None and wake_word_detector.is_active
+    wake_words = assistant_config.get('wake_word.words', ['otto'])
+    
+    return jsonify({
+        'active': is_active,
+        'wake_words': wake_words,
+        'enabled_in_config': assistant_config.get('wake_word.enabled', False)
+    })
 
 
 @app.route('/api/confirm', methods=['POST'])
@@ -652,7 +739,8 @@ def handle_connect():
     emit('connection_status', {
         'status': 'connected',
         'listening': is_listening,
-        'pending_confirmation': pending_confirmation is not None
+        'pending_confirmation': pending_confirmation is not None,
+        'wake_word_active': wake_word_detector is not None and wake_word_detector.is_active
     })
 
 
@@ -699,6 +787,35 @@ def handle_ping():
     emit('pong', {'timestamp': 'now'})
 
 
+# ============== WAKE WORD CALLBACK ==============
+
+def on_wake_word_detected(wake_word: str):
+    """
+    Callback when wake word is detected.
+    Automatically starts voice listening.
+    
+    Args:
+        wake_word: The wake word that was detected
+    """
+    global is_listening, listening_thread, wake_word_detector
+    
+    logger.info(f"[WakeWord] '{wake_word}' detected - starting voice listening")
+    
+    # Emit wake word detection event to clients
+    socketio.emit('wake_word_detected', {'word': wake_word})
+    
+    # Start voice listening if not already active
+    if not is_listening:
+        is_listening = True
+        listening_thread = threading.Thread(target=voice_loop, daemon=True)
+        listening_thread.start()
+        
+        logger.info("[WakeWord] Voice listening started automatically")
+        socketio.emit('listening_status', {'listening': True, 'triggered_by_wake_word': True})
+    else:
+        logger.debug("[WakeWord] Voice listening already active, ignoring detection")
+
+
 # ============== VOICE LOOP (Background Thread) ==============
 
 def voice_loop():
@@ -707,9 +824,14 @@ def voice_loop():
     Runs in a separate thread when listening is enabled
     Uses adaptive/proximity-based listening (stops on silence, not fixed duration)
     """
-    global is_listening, pending_confirmation
+    global is_listening, pending_confirmation, wake_word_detector
     
     logger.info('[Voice Loop] Started (Adaptive mode - proximity-favored)')
+    
+    # Pause wake word detection during active listening
+    if wake_word_detector and wake_word_detector.is_active:
+        wake_word_detector.pause()
+        logger.debug("[Voice Loop] Wake word detection paused during active listening")
     
     while is_listening:
         try:
@@ -722,13 +844,53 @@ def voice_loop():
             
             logger.info(f"[Voice Loop] Heard: {text}")
             
+            # Filter out TTS feedback: repetitive or nonsensical transcriptions
+            # These occur when microphone picks up speaker output
+            words = text.lower().split()
+            if len(words) > 10:
+                # Check for excessive repetition (e.g., "1, 2, 1, 2, 1, 2...")
+                unique_ratio = len(set(words)) / len(words)
+                if unique_ratio < 0.3:  # Less than 30% unique words
+                    logger.warning(f"[Voice Loop] Filtering TTS feedback (repetitive): {unique_ratio:.2%} unique")
+                    continue
+            
+            # Skip very long rambling transcriptions (typical of TTS feedback)
+            if len(text) > 300:
+                logger.warning(f"[Voice Loop] Filtering TTS feedback (too long): {len(text)} chars")
+                continue
+            
             # Send transcription to all connected clients
             socketio.emit('voice_input', {'text': text, 'final': True})
             
             normalized = text.lower().strip()
+            normalized_clean = " ".join(
+                "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in normalized).split()
+            )
+
+            # Voice command: stop listening mode (without shutting down assistant)
+            stop_listening_aliases = [
+                "stop listening",
+                "stp listening",
+                "stop listning",
+                "stop listen",
+                "stop voice",
+                "stop recording",
+                "stop hearing",
+                "thats all",
+                "that's all",
+            ]
+            if any(alias in normalized_clean for alias in stop_listening_aliases):
+                logger.info(f"[Voice Loop] Stop-listening command received: {text}")
+                is_listening = False
+                socketio.emit('command_result', {
+                    'status': 'success',
+                    'message': 'Listening stopped.'
+                })
+                speak("Stopping listening mode.")
+                break
             
             # Check for exit commands
-            if normalized in ["exit", "quit", "shutdown", "stop assistant", "goodbye", "close"]:
+            if normalized_clean in ["exit", "quit", "shutdown", "stop assistant", "goodbye", "close"]:
                 logger.info("[Voice Loop] Exit command received")
                 is_listening = False
                 socketio.emit('assistant_shutdown', {
@@ -765,6 +927,11 @@ def voice_loop():
                 # Send result to clients
                 socketio.emit('command_result', result)
                 
+                # Wait after speaking to prevent microphone from picking up TTS audio
+                # This prevents feedback loop where mic captures speaker output
+                logger.debug("[Voice Loop] Pausing to prevent TTS feedback...")
+                time.sleep(1.5)
+                
         except KeyboardInterrupt:
             logger.info("[Voice Loop] Interrupted")
             is_listening = False
@@ -779,6 +946,11 @@ def voice_loop():
     
     logger.info('[Voice Loop] Stopped')
     socketio.emit('listening_status', {'listening': False})
+    
+    # Resume wake word detection after voice loop stops
+    if wake_word_detector and wake_word_detector.is_active:
+        wake_word_detector.resume()
+        logger.debug("[Voice Loop] Wake word detection resumed")
 
 
 # ============== MAIN ENTRY POINT ==============
@@ -820,6 +992,28 @@ def initialize_database():
         logger.error(f"[Database] Initialization error: {e}", exc_info=True)
 
 
+def initialize_wake_word():
+    """Initialize wake-word detector at startup when enabled in config."""
+    global wake_word_detector
+
+    try:
+        enabled = bool(assistant_config.get('wake_word.enabled', False))
+        if not enabled:
+            logger.info('[WakeWord] Startup auto-enable is OFF')
+            return
+
+        if wake_word_detector is None:
+            wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
+
+        if not wake_word_detector.is_active:
+            wake_word_detector.start()
+            logger.info('[WakeWord] Startup auto-enable is ON. Detection started.')
+        else:
+            logger.info('[WakeWord] Detection already active at startup.')
+    except Exception as e:
+        logger.error(f"[WakeWord] Startup initialization error: {e}", exc_info=True)
+
+
 def run_api_service(host='0.0.0.0', port=5000, debug=False):
     """
     Run the API service
@@ -831,6 +1025,7 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
     """
     # Initialize database and create default admin if needed
     initialize_database()
+    initialize_wake_word()
     
     logger.info(f'API Service starting on http://{host}:{port}')
     logger.info('Available endpoints:')
@@ -852,8 +1047,18 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
     logger.info('  send_command - Send command via WebSocket')
     logger.info('  ping - Ping server')
     
-    socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
+    # IMPORTANT: disable reloader for threaded background services (wake-word loop).
+    # Flask reloader starts the app twice in debug mode, which duplicates detector threads.
+    socketio.run(
+        app,
+        host=host,
+        port=port,
+        debug=debug,
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,
+    )
 
 
 if __name__ == '__main__':
-    run_api_service(debug=True)
+    # Keep debug off for stable background voice/wake-word threads.
+    run_api_service(debug=False)

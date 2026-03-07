@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from ..services.api_client import send_confirmation
+from services.api_client import send_confirmation
 
 def show_confirmation(master, message):
     popup = ctk.CTkToplevel(master)
