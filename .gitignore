@@ -59,3 +59,9 @@ backend/voice_engine/tts/piper/input.txt
 # ==================================
 *.wav
 desktop/
+
+# ==================================
+# Test Coverage Reports
+# ==================================
+.coverage
+htmlcov/
