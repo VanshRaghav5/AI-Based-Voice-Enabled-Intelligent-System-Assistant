@@ -65,7 +65,14 @@ def _apply_text_corrections(text: str) -> str:
 load_whisper_model()
 
 
-def transcribe_audio(audio_path: str) -> str:
+def transcribe_audio(
+    audio_path: str,
+    *,
+    language_override: str = None,
+    initial_prompt_override: str = None,
+    apply_corrections: bool = True,
+    log_prefix: str = "[Whisper]",
+) -> str:
 
     if model is None:
         logger.error("[Whisper Error] Model not loaded.")
@@ -84,7 +91,7 @@ def transcribe_audio(audio_path: str) -> str:
                 return ""
         
         file_size = os.path.getsize(audio_path)
-        logger.info(f"[Whisper] Transcribing: {audio_path} (size: {file_size} bytes)")
+        logger.info(f"{log_prefix} Transcribing: {audio_path} (size: {file_size} bytes)")
 
         # Load audio via scipy to bypass FFmpeg dependency on Windows
         sample_rate, audio_data = wavfile.read(audio_path)
@@ -99,6 +106,16 @@ def transcribe_audio(audio_path: str) -> str:
         # Normalize loudness for clearer decoding across different mic levels
         audio_float = _normalize_audio(audio_float)
 
+        # Validate language - fallback to English if invalid
+        language = language_override if language_override is not None else WHISPER_LANGUAGE
+        if language not in ["en", "es", "fr", "de", "it", "pt", "nl", "ru", "zh", "ja", "ko", "hi", "ar", "tr"]:
+            logger.warning(f"{log_prefix} Invalid language '{language}', using 'en' as fallback")
+            language = "en"
+
+        initial_prompt = (
+            initial_prompt_override if initial_prompt_override is not None else WHISPER_INITIAL_PROMPT
+        )
+
         # Balanced transcription parameters for clarity + responsiveness
         result = model.transcribe(
             audio_float,
@@ -106,15 +123,16 @@ def transcribe_audio(audio_path: str) -> str:
             temperature=0.0,
             condition_on_previous_text=False,
             no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
-            language=WHISPER_LANGUAGE,
+            language=language,
             beam_size=WHISPER_BEAM_SIZE,
             best_of=WHISPER_BEST_OF,
-            initial_prompt=WHISPER_INITIAL_PROMPT,
+            initial_prompt=initial_prompt,
         )
 
         text = result.get("text", "").strip()
-        text = _apply_text_corrections(text)
-        logger.info(f"[Whisper] Transcription result: {text}")
+        if apply_corrections:
+            text = _apply_text_corrections(text)
+        logger.info(f"{log_prefix} Transcription result: {text}")
 
         return text
 

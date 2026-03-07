@@ -78,7 +78,8 @@ def login(username: str, password: str) -> Tuple[bool, str, Optional[str], Optio
     try:
         response = requests.post(
             f"{BASE_URL}/api/auth/login",
-            json={"username": username, "password": password}
+            json={"username": username, "password": password},
+            timeout=10
         )
         
         data = response.json()
@@ -105,7 +106,8 @@ def logout() -> Tuple[bool, str]:
     try:
         response = requests.post(
             f"{BASE_URL}/api/auth/logout",
-            headers=get_auth_headers()
+            headers=get_auth_headers(),
+            timeout=5
         )
         
         clear_token()
@@ -134,7 +136,8 @@ def register(username: str, email: str, password: str) -> Tuple[bool, str]:
                 "username": username,
                 "email": email,
                 "password": password
-            }
+            },
+            timeout=10
         )
         
         data = response.json()
@@ -170,7 +173,8 @@ def verify_token() -> Tuple[bool, Optional[Dict]]:
     try:
         response = requests.get(
             f"{BASE_URL}/api/auth/verify",
-            headers=get_auth_headers()
+            headers=get_auth_headers(),
+            timeout=5
         )
         
         if response.status_code == 200:
@@ -185,42 +189,105 @@ def verify_token() -> Tuple[bool, Optional[Dict]]:
 
 
 def process_command(command: str):
+    """Process a command with extended timeout for LLM operations."""
     return requests.post(
         f"{BASE_URL}/api/process_command",
         json={"command": command},
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=120  # 2 minutes for LLM + confirmation workflows
     )
 
 def start_listening():
-    return requests.post(
-        f"{BASE_URL}/api/start_listening",
-        headers=get_auth_headers()
-    )
+    """Start voice listening mode. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/start_listening",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error starting voice listening: {e}")
+        return False
 
 def stop_listening():
-    return requests.post(
-        f"{BASE_URL}/api/stop_listening",
-        headers=get_auth_headers()
-    )
+    """Stop voice listening mode. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/stop_listening",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error stopping voice listening: {e}")
+        return False
 
 def send_confirmation(approved: bool):
     return requests.post(
         f"{BASE_URL}/api/confirm",
         json={"approved": approved},
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=10
     )
+
+def start_wake_word():
+    """Start wake word detection. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/wake_word/start",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error starting wake word detection: {e}")
+        return False
+
+def stop_wake_word():
+    """Stop wake word detection. Returns True on success, False on failure."""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/wake_word/stop",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error stopping wake word detection: {e}")
+        return False
+
+def get_wake_word_status():
+    """Get wake word detection status."""
+    try:
+        response = requests.get(
+            f"{BASE_URL}/api/wake_word/status",
+            headers=get_auth_headers(),
+            timeout=5
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error getting wake word status: {e}")
+        return None
 
 def update_settings(settings: dict):
     """Update backend settings (persona, language, memory)."""
     return requests.post(
         f"{BASE_URL}/api/settings",
         json=settings,
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=10
     )
 
 def get_settings():
     """Get current backend settings."""
     return requests.get(
         f"{BASE_URL}/api/settings",
-        headers=get_auth_headers()
+        headers=get_auth_headers(),
+        timeout=5
     )
