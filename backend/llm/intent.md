@@ -10,8 +10,7 @@
 - `file_open` (open_file) - Open/view a file
 - `file_create` (create_file) - Create a new file
 - `file_delete` (delete_file) - Delete a file
-- `file_move`hi there
-(move_file) - Move/rename a file
+- `file_move` (move_file) - Move/rename a file
 - `file_search` (search_file) - Search for files
 
 ### Folder Operations
