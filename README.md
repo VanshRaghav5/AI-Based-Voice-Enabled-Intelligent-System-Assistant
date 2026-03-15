@@ -13,11 +13,12 @@ Existing voice assistants (Siri, Alexa, Google) require constant internet, send 
 A modular, agent-based voice assistant that runs **entirely on your local machine**:
 
 - **Whisper STT** transcribes speech offline (GPU-accelerated)
-- **Local LLM** (Ollama) understands intent and generates execution plans
+- **Local LLM** (Ollama) understands intent and drives a bounded agent loop
 - **17+ automation tools** execute real OS-level actions
 - **Piper TTS** speaks results back naturally
 - JWT-authenticated desktop client with login/registration
 - Falls back to keyword matching when LLM is unavailable — always works
+- **Persistent memory** stores execution context and saved facts across restarts
 
 ---
 
@@ -66,6 +67,7 @@ A modular, agent-based voice assistant that runs **entirely on your local machin
 | **Email** | Send via SMTP with validation |
 | **Intelligence** | Multi-step planning, confidence scoring (0.0–1.0), parameter extraction & validation |
 | **Safety** | Confirmation prompts for dangerous actions, window detection, error recovery |
+| **Memory** | Persistent state in `backend/data/session_memory.json`, remembered facts (`remember/recall/forget/list`) |
 | **Settings** | Theme, persona, language, memory toggle — persisted locally |
 
 ### Command Examples
@@ -78,7 +80,19 @@ A modular, agent-based voice assistant that runs **entirely on your local machin
 "Lock my laptop"
 "Search for budget.xlsx"
 "Open youtube"
+"Remember that manager name is Priya"
+"Recall manager name"
 ```
+
+### Persistent Memory Quick Use
+
+The assistant now stores memory on disk and reloads it on startup.
+
+- Memory file: `backend/data/session_memory.json`
+- Remember: `Remember that wifi password hint is bluecar`
+- Recall: `Recall wifi password hint`
+- Forget: `Forget wifi password hint`
+- List: `List memory`
 
 ---
 
@@ -87,9 +101,9 @@ A modular, agent-based voice assistant that runs **entirely on your local machin
 1. **Authenticate** — Login or register via the desktop client
 2. **Input** — Type a command or click the mic button for voice
 3. **Transcribe** — Whisper converts audio to text (offline)
-4. **Understand** — LLM generates a structured execution plan (JSON with tool calls + parameters)
-5. **Validate** — Parameters are extracted, validated, and scored for confidence
-6. **Execute** — Multi-executor runs each step; high-risk actions require confirmation
+4. **Understand & Plan** — LLM generates a structured execution plan (JSON with tool calls + parameters)
+5. **Agent Loop** — Controller runs `plan -> act -> observe -> replan` (bounded retries)
+6. **Execute Safely** — Multi-executor runs each step; high-risk actions require confirmation and exact-step resume
 7. **Respond** — Piper TTS speaks the result; chat UI shows message bubbles
 
 ### Confidence-Based Execution
@@ -167,9 +181,9 @@ AI-Based-Voice-Enabled-Intelligent-System-Assistant/
 │   │   ├── stt/                   # Whisper speech-to-text
 │   │   └── tts/                   # Piper text-to-speech
 │   │
-│   ├── memory/                    # State management
-│   │   ├── memory_store.py        # Conversation history
-│   │   ├── session_state.py       # Session state
+│   ├── memory/                    # State + persistent memory
+│   │   ├── memory_store.py        # Thread-safe memory operations
+│   │   ├── session_state.py       # Persistent session memory loader/saver
 │   │   └── state_schema.py        # State data models
 │   │
 │   └── config/                    # Configuration
@@ -203,11 +217,12 @@ AI-Based-Voice-Enabled-Intelligent-System-Assistant/
 │
 ├── tests/                         # 90+ unit tests (fully mocked)
 ├── docs/                          # Documentation
+│   ├── README.md                  # Docs index (consolidated)
+│   ├── HANDBOOK.md                # Primary operational guide
 │   ├── API_DOCUMENTATION.md
-│   ├── SECURITY_IMPLEMENTATION.md
-│   ├── SYSTEM_CAPABILITIES.md
-│   ├── SETTINGS_DOCUMENTATION.md
-│   └── reports/                   # Dev reports
+│   ├── reports/
+│   │   └── REPORTS_SUMMARY.md     # Consolidated report index
+│   └── archive/                   # Legacy docs and reports
 └── examples/                      # Example code & usage patterns
 ```
 
@@ -242,6 +257,30 @@ pip install -r desktop_1/requirements.txt
 ollama pull qwen2.5:7b-instruct-q4_0
 ```
 
+### Required Security Environment Variables
+
+Set these once before running the backend (or `START.bat`):
+
+```powershell
+setx OMNIASSIST_FLASK_SECRET_KEY "replace-with-long-random-secret"
+setx OMNIASSIST_JWT_SECRET "replace-with-long-random-secret"
+```
+
+Optional (first-run admin bootstrap):
+
+```powershell
+setx OMNIASSIST_BOOTSTRAP_ADMIN_USERNAME "admin"
+setx OMNIASSIST_BOOTSTRAP_ADMIN_EMAIL "admin@example.com"
+setx OMNIASSIST_BOOTSTRAP_ADMIN_PASSWORD "StrongPassword123!"
+```
+
+Optional (restrict CORS origins):
+
+```powershell
+setx OMNIASSIST_CORS_ALLOWED_ORIGINS "http://127.0.0.1:5000,http://localhost:5000"
+```
+
+> After `setx`, close and reopen terminal/VS Code so variables are available.
 > Without Ollama, the system uses built-in keyword matching — fully functional but less intelligent.
 
 ### Launch
@@ -318,7 +357,7 @@ See [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) for full reference.
 | **Rate Limiting** | Flask-Limiter on auth endpoints |
 | **Token Storage** | Local file (`~/.omniassist/token.json`) |
 
-See [SECURITY_SETUP_GUIDE.md](SECURITY_SETUP_GUIDE.md) and [docs/SECURITY_IMPLEMENTATION.md](docs/SECURITY_IMPLEMENTATION.md).
+See [docs/HANDBOOK.md](docs/HANDBOOK.md) and archived security details in [docs/archive/legacy-docs/SECURITY_IMPLEMENTATION.md](docs/archive/legacy-docs/SECURITY_IMPLEMENTATION.md).
 
 ---
 

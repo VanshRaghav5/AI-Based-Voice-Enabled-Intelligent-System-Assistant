@@ -5,6 +5,11 @@
 ### Overview
 An intelligent, voice-enabled Windows desktop automation system that combines offline speech recognition, natural language understanding, and automated task execution. The system uses a modular agent-based architecture to interpret voice commands and execute complex automation tasks without requiring cloud connectivity for core features.
 
+### Update Notice (March 2026)
+- Runtime now uses a bounded agent loop: `plan -> act -> observe -> replan`
+- Assistant memory is now persistent across restarts
+- User facts are supported through `remember`, `recall`, `forget`, and `list memory`
+
 ---
 
 ## 📋 Table of Contents
@@ -1545,7 +1550,7 @@ class BaseTool:
 **Current Limits**:
 - Single-user, single-session
 - Sequential execution only
-- In-memory state (no persistence)
+- Persistent local state via JSON memory file
 - Local file operations only
 
 **Scalability Path**:
@@ -1613,7 +1618,7 @@ class BaseTool:
 4. **Single Session**
    - No multi-user support
    - One command at a time
-   - No conversation memory beyond session
+  - No per-user memory partitioning yet (shared local memory)
 
 5. **Internet Required For**:
    - Ollama model download (first time)

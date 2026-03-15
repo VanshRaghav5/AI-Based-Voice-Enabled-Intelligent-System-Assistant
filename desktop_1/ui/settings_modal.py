@@ -112,7 +112,7 @@ class SettingsModal(ctk.CTkToplevel):
         
         language_menu = ctk.CTkComboBox(
             language_frame,
-            values=["english", "hindi", "hinglish"],
+            values=["english", "hindi", "hinglish", "spanish", "french", "german"],
             variable=self.language_var,
             command=self._on_language_change,
             fg_color="#252525",
