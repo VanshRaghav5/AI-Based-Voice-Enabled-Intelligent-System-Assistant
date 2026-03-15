@@ -9,6 +9,7 @@ from desktop.services.api_client import ApiClient
 from desktop.services.session_store import SessionStore
 from desktop.services.socket_client import SocketClient
 from desktop.ui.conversation_view import ConversationView
+from desktop.ui.confirmation_dialog import ConfirmationDialog
 from desktop.ui.execution_timeline import ExecutionTimeline
 from desktop.ui.orb_visualizer import OrbVisualizer
 from desktop.ui.status_indicator import StatusIndicator
@@ -79,6 +80,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.bus.command_result.connect(self._on_command_result)
         self.bus.error.connect(self._on_error)
         self.bus.confirmation_required.connect(self._on_confirmation_required)
+        self.bus.confirmation_result.connect(self._on_confirmation_result)
         self.bus.listening_status.connect(self._on_listening_status)
         self.bus.voice_input.connect(self._on_voice_input)
 
@@ -153,6 +155,36 @@ class MainWindow(QtWidgets.QMainWindow):
         message = (data or {}).get("message", "Confirm action?")
         self.conversation.add_system(f"Confirmation required: {message}")
 
+        dlg = ConfirmationDialog(message=message, parent=self)
+        dlg.exec()
+
+        # Send confirmation in background to avoid blocking the UI.
+        worker = _ConfirmWorker(self.api, approved=dlg.approved)
+        worker.result.connect(self._on_confirm_rest_result)
+        worker.start()
+
+    @QtCore.Slot(dict)
+    def _on_confirm_rest_result(self, payload: dict):
+        # Socket event `confirmation_result` is the canonical signal; REST response is fallback.
+        status = payload.get("status")
+        msg = payload.get("message")
+        if msg:
+            if status == "success":
+                self.conversation.add_assistant(msg)
+            else:
+                self.conversation.add_system(msg)
+
+    @QtCore.Slot(dict)
+    def _on_confirmation_result(self, data: dict):
+        msg = (data or {}).get("message") or ""
+        status = (data or {}).get("status") or ""
+        if msg:
+            if status == "success":
+                self.conversation.add_assistant(msg)
+            else:
+                self.conversation.add_system(msg)
+        self._set_state(AssistantState.IDLE)
+
     @QtCore.Slot(dict)
     def _on_listening_status(self, data: dict):
         listening = bool((data or {}).get("listening"))
@@ -190,5 +222,22 @@ class _CommandWorker(QtCore.QThread):
             resp = self.api.process_command(self.command)
             payload = resp.json() if resp.content else {}
             self.result.emit(payload if isinstance(payload, dict) else {"status": "success", "message": str(payload)})
+        except Exception as exc:
+            self.result.emit({"status": "error", "message": str(exc)})
+
+
+class _ConfirmWorker(QtCore.QThread):
+    result = QtCore.Signal(dict)
+
+    def __init__(self, api: ApiClient, approved: bool):
+        super().__init__()
+        self.api = api
+        self.approved = approved
+
+    def run(self):
+        try:
+            res = self.api.send_confirmation(self.approved)
+            payload = res.data if isinstance(res.data, dict) else {"status": "success" if res.ok else "error", "message": res.message}
+            self.result.emit(payload)
         except Exception as exc:
             self.result.emit({"status": "error", "message": str(exc)})
