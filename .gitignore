@@ -5,6 +5,7 @@ venv/
 .venv/
 .env/
 backend/venv/
+desktop/venv/
 
 # ==================================
 # Python Cache / Build Files
@@ -105,6 +106,5 @@ backend/voice_engine/tts/piper/input.txt
 # ==================================
 # Miscellaneous Artifacts
 # ==================================
-desktop/
 *.bak
 *.tmp
