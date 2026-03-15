@@ -6,6 +6,7 @@ from ui.confirmation_popup import show_confirmation
 from ui.status_bar import StatusBar
 from ui.listening_overlay import ListeningOverlay
 from ui.settings_modal import SettingsModal
+from ui.i18n import tr
 from audio.mic_visualizer import MicVisualizer
 from settings_manager import settings_manager
 import threading
@@ -19,6 +20,7 @@ class ChatWindow(ctk.CTkFrame):
         super().__init__(master, fg_color=bg_color)
         self.master_window = master
         self.settings_manager = settings_manager
+        self.ui_language = self.settings_manager.get("language", "english")
         self.on_logout = on_logout
 
         # Compact top bar with logo and settings
@@ -112,7 +114,7 @@ class ChatWindow(ctk.CTkFrame):
         
         self.entry = ctk.CTkEntry(
             input_frame, 
-            placeholder_text="Type your command here...",
+            placeholder_text=tr("type_command_placeholder", self.ui_language),
             height=45,
             corner_radius=22,
             border_width=1,
@@ -126,7 +128,7 @@ class ChatWindow(ctk.CTkFrame):
 
         self.send_btn = ctk.CTkButton(
             input_frame, 
-            text="Send", 
+            text=tr("send", self.ui_language), 
             width=100, 
             height=45,
             corner_radius=22,
@@ -147,7 +149,7 @@ class ChatWindow(ctk.CTkFrame):
         
         self.listen_btn = ctk.CTkButton(
             controls_frame, 
-            text="🎙 Start Listening", 
+            text=f"🎙 {tr('start_listening', self.ui_language)}", 
             height=38,
             corner_radius=19,
             fg_color=listen_bg,
@@ -167,7 +169,7 @@ class ChatWindow(ctk.CTkFrame):
         
         self.wakeword_btn = ctk.CTkButton(
             controls_frame, 
-            text="💤 Wake Word: OFF", 
+            text=f"💤 {tr('wake_word_off', self.ui_language)}", 
             height=38,
             corner_radius=19,
             fg_color=wakeword_bg,
@@ -244,8 +246,28 @@ class ChatWindow(ctk.CTkFrame):
             # Update font sizes dynamically (UI only)
             self._apply_font_size(value)
         elif setting_key in ["persona", "language", "memory_enabled"]:
+            if setting_key == "language":
+                self._apply_language_change(value)
             # Send to backend for processing
             self._sync_setting_to_backend(setting_key, value)
+
+    def _apply_language_change(self, language):
+        """Apply basic UI text localization without restart."""
+        self.ui_language = language
+        self.entry.configure(placeholder_text=tr("type_command_placeholder", self.ui_language))
+        self.send_btn.configure(text=tr("send", self.ui_language))
+
+        if self.listening:
+            self.listen_btn.configure(text=f"⏹ {tr('stop_listening', self.ui_language)}")
+        else:
+            self.listen_btn.configure(text=f"🎙 {tr('start_listening', self.ui_language)}")
+
+        if self.wake_word_active:
+            self.wakeword_btn.configure(text=f"👂 {tr('wake_word_on', self.ui_language)}")
+        else:
+            self.wakeword_btn.configure(text=f"💤 {tr('wake_word_off', self.ui_language)}")
+
+        self.add_message(f"✓ Language changed to: {language.capitalize()}", sender="system")
     
     def _sync_setting_to_backend(self, setting_key, value):
         """Send setting change to backend API."""
@@ -338,7 +360,7 @@ class ChatWindow(ctk.CTkFrame):
         success = connect()
         if success:
             self.status_bar.set_connected(True)
-            self.add_message("✓ Connected to backend. Ready to assist!", sender="system")
+            self.add_message(f"✓ {tr('connected_ready', self.ui_language)}", sender="system")
             # Sync wake-word button state with backend.
             try:
                 wake_status = get_wake_word_status()
@@ -371,7 +393,7 @@ class ChatWindow(ctk.CTkFrame):
         # Clear and disable input
         self.entry.delete(0, "end")
         self.entry.update()  # Force UI update
-        self.send_btn.configure(state="disabled", text="Processing...")
+        self.send_btn.configure(state="disabled", text=tr("processing", self.ui_language))
         self.entry.configure(state="disabled")
         self.status_bar.set_processing(True)
         
@@ -387,7 +409,7 @@ class ChatWindow(ctk.CTkFrame):
     def _process_command_async(self, cmd):
         """Process command asynchronously to avoid blocking UI."""
         try:
-            response = process_command(cmd)
+            response = process_command(cmd, language=self.ui_language)
             # Check if request succeeded
             if response.status_code != 200:
                 error_msg = response.json().get('message', 'Command processing failed')
@@ -419,7 +441,7 @@ class ChatWindow(ctk.CTkFrame):
             self.processing_timeout_id = None
         
         # Re-enable input
-        self.send_btn.configure(state="normal", text="Send")
+        self.send_btn.configure(state="normal", text=tr("send", self.ui_language))
         self.entry.configure(state="normal")
         self.entry.focus()
         self.status_bar.set_processing(False)
@@ -456,7 +478,7 @@ class ChatWindow(ctk.CTkFrame):
             
             if is_listening:
                 self.listen_btn.configure(
-                    text="⏹ Stop Listening", 
+                    text=f"⏹ {tr('stop_listening', self.ui_language)}", 
                     fg_color="#DC2626", 
                     hover_color="#B91C1C",
                     text_color="white",
@@ -470,7 +492,7 @@ class ChatWindow(ctk.CTkFrame):
                 listen_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
                 listen_text = "#4A9EFF" if self.is_dark else "#2B5EFF"
                 self.listen_btn.configure(
-                    text="🎙 Start Listening", 
+                    text=f"🎙 {tr('start_listening', self.ui_language)}", 
                     fg_color=listen_bg, 
                     hover_color=listen_hover,
                     text_color=listen_text,
@@ -495,7 +517,7 @@ class ChatWindow(ctk.CTkFrame):
             if success:
                 self.wake_word_active = True
                 self.wakeword_btn.configure(
-                    text="👂 Wake Word: ON",
+                    text=f"👂 {tr('wake_word_on', self.ui_language)}",
                     fg_color="#27AE60",
                     hover_color="#229954",
                     text_color="white",
@@ -513,7 +535,7 @@ class ChatWindow(ctk.CTkFrame):
                 wakeword_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
                 wakeword_text = "#9B59B6" if self.is_dark else "#8E44AD"
                 self.wakeword_btn.configure(
-                    text="💤 Wake Word: OFF",
+                    text=f"💤 {tr('wake_word_off', self.ui_language)}",
                     fg_color=wakeword_bg,
                     hover_color=wakeword_hover,
                     text_color=wakeword_text,
@@ -527,7 +549,7 @@ class ChatWindow(ctk.CTkFrame):
                 wakeword_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
                 wakeword_text = "#9B59B6" if self.is_dark else "#8E44AD"
                 self.wakeword_btn.configure(
-                    text="💤 Wake Word: OFF",
+                    text=f"💤 {tr('wake_word_off', self.ui_language)}",
                     fg_color=wakeword_bg,
                     hover_color=wakeword_hover,
                     text_color=wakeword_text,
@@ -540,7 +562,7 @@ class ChatWindow(ctk.CTkFrame):
             self.wake_word_active = is_active
             if is_active:
                 self.wakeword_btn.configure(
-                    text="👂 Wake Word: ON",
+                    text=f"👂 {tr('wake_word_on', self.ui_language)}",
                     fg_color="#27AE60",
                     hover_color="#229954",
                     text_color="white",
@@ -551,7 +573,7 @@ class ChatWindow(ctk.CTkFrame):
                 wakeword_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
                 wakeword_text = "#9B59B6" if self.is_dark else "#8E44AD"
                 self.wakeword_btn.configure(
-                    text="💤 Wake Word: OFF",
+                    text=f"💤 {tr('wake_word_off', self.ui_language)}",
                     fg_color=wakeword_bg,
                     hover_color=wakeword_hover,
                     text_color=wakeword_text,
@@ -664,13 +686,13 @@ class ChatWindow(ctk.CTkFrame):
         @sio.on("connect")
         def on_connect():
             self._safe_ui_update(lambda: self.status_bar.set_connected(True))
-            self._safe_ui_update(lambda: self.add_message("✓ Connected to backend.", sender="system"))
+            self._safe_ui_update(lambda: self.add_message(f"✓ {tr('connected', self.ui_language)}", sender="system"))
         
         @sio.on("disconnect")
         def on_disconnect():
             self._safe_ui_update(lambda: self.status_bar.set_connected(False))
             self._safe_ui_update(self._clear_status_indicators)
-            self._safe_ui_update(lambda: self.add_message("⚠ Disconnected from backend.", sender="system"))
+            self._safe_ui_update(lambda: self.add_message(f"⚠ {tr('disconnected', self.ui_language)}", sender="system"))
     
     def _shutdown_application(self):
         """Shutdown the application gracefully."""
@@ -702,7 +724,7 @@ class ChatWindow(ctk.CTkFrame):
         listen_hover = "#3A3A3A" if self.is_dark else "#D0D0D0"
         listen_text = "#4A9EFF" if self.is_dark else "#2B5EFF"
         self.listen_btn.configure(
-            text="🎙 Start Listening", 
+            text=f"🎙 {tr('start_listening', self.ui_language)}", 
             fg_color=listen_bg, 
             hover_color=listen_hover,
             text_color=listen_text,
@@ -717,16 +739,7 @@ class ChatWindow(ctk.CTkFrame):
     def _show_welcome_message(self):
         """Display welcome message when chat starts."""
         try:
-            welcome_text = (
-                "👋 Hello! I'm OmniAssist, your AI assistant.\n\n"
-                "I can help you with:\n"
-                "  • Opening applications\n"
-                "  • Web searches and browsing\n"
-                "  • System commands\n"
-                "  • File management\n"
-                "  • Answering questions\n\n"
-                "Try saying \"open WhatsApp\" or type your command below!"
-            )
+            welcome_text = f"👋 {tr('welcome_message', self.ui_language)}"
             self.add_message(welcome_text, sender="assistant")
         except Exception as e:
             print(f"Error showing welcome message: {e}")

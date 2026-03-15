@@ -31,6 +31,8 @@ python desktop_1/main.py
 | **Settings** | Theme (dark/light), persona, language, memory toggle, font size — persisted to `~/.omniassist/ui_settings.json` |
 | **Real-Time** | Socket.IO events for transcription, execution steps, confirmations, errors |
 | **Thread Safety** | All socket callbacks routed through `_safe_ui_update()` to avoid cross-thread Tkinter crashes |
+| **Assistant Runtime** | Backend executes bounded agent loop with safe confirmation checkpoints and retry-aware replanning |
+| **Memory** | Backend persistent memory supports remembered facts across restarts (`remember`, `recall`, `forget`, `list memory`) |
 
 ---
 

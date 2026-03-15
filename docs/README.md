@@ -1,19 +1,46 @@
 # Documentation
 
-This directory contains all project documentation.
+Documentation is organized into a small canonical set. Use the guides below as your starting point.
 
-## Installation Guides
-- **[COMPLETE_INSTALLATION_GUIDE.md](COMPLETE_INSTALLATION_GUIDE.md)** - Comprehensive step-by-step setup guide
-- **[InstallationGuide.md](InstallationGuide.md)** - Quick installation reference
+---
 
-## System Documentation
-- **[READMESummary.md](READMESummary.md)** - Complete system overview and architecture
-- **[COMMAND_PARSING_SUMMARY.md](COMMAND_PARSING_SUMMARY.md)** - Command parsing system documentation
-- **[CONFIDENCE_SYSTEM_SUMMARY.md](CONFIDENCE_SYSTEM_SUMMARY.md)** - Confidence tracking system documentation
-- **[TESTING_SUMMARY.md](TESTING_SUMMARY.md)** - Testing framework and test coverage
+## Core Docs
 
-## Quick Links
-- Main README: [../README.md](../README.md)
-- Examples: [../examples/](../examples/)
-- Backend Code: [../backend/](../backend/)
-- Tests: [../tests/](../tests/)
+| File | Description |
+|------|-------------|
+| [HANDBOOK.md](HANDBOOK.md) | Operational guide — runtime model, memory, safety |
+| [API_DOCUMENTATION.md](API_DOCUMENTATION.md) | Full REST and WebSocket API reference |
+
+---
+
+## User Guides
+
+Step-by-step guides for setup and features:
+
+| Guide | Description |
+|-------|-------------|
+| [guides/installation.md](guides/installation.md) | Full installation walkthrough |
+| [guides/security_setup.md](guides/security_setup.md) | Required env vars and security configuration |
+| [guides/email_setup.md](guides/email_setup.md) | SMTP config for email features and password reset |
+| [guides/microphone_setup.md](guides/microphone_setup.md) | Microphone configuration and troubleshooting |
+| [guides/wake_word.md](guides/wake_word.md) | Wake-word detection guide ("Omini") |
+
+---
+
+## Archive
+
+Legacy docs and historical reports (reference only):
+
+- [archive/legacy-docs/](archive/legacy-docs/) — Original documentation set
+- [archive/reports/](archive/reports/) — Development status and test reports
+- [archive/README.md](archive/README.md) — Archive index
+
+---
+
+## Project Links
+
+- [../README.md](../README.md) — Main project readme
+- [../STRUCTURE.md](../STRUCTURE.md) — Full project structure map
+- [../examples/README.md](../examples/README.md) — Usage examples
+- [../tests/README.md](../tests/README.md) — Testing guide
+
