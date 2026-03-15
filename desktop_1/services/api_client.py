@@ -188,11 +188,15 @@ def verify_token() -> Tuple[bool, Optional[Dict]]:
         return False, None
 
 
-def process_command(command: str):
+def process_command(command: str, language: Optional[str] = None):
     """Process a command with extended timeout for LLM operations."""
+    payload = {"command": command}
+    if language:
+        payload["language"] = language
+
     return requests.post(
         f"{BASE_URL}/api/process_command",
-        json={"command": command},
+        json=payload,
         headers=get_auth_headers(),
         timeout=120  # 2 minutes for LLM + confirmation workflows
     )
@@ -291,3 +295,53 @@ def get_settings():
         headers=get_auth_headers(),
         timeout=5
     )
+
+
+def request_password_reset(email: str) -> Tuple[bool, str]:
+    """
+    Request a password reset email.
+
+    Returns:
+        (success, message)
+    """
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/auth/password-reset/request",
+            json={"email": email},
+            timeout=15
+        )
+        data = response.json()
+        if response.status_code == 200:
+            return True, data.get("message", "Reset email sent.")
+        return False, data.get("message", "Failed to send reset email.")
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"
+
+
+def confirm_password_reset(token: str, new_password: str) -> Tuple[bool, str]:
+    """
+    Confirm a password reset with a one-time token and new password.
+
+    Returns:
+        (success, message)
+    """
+    try:
+        response = requests.post(
+            f"{BASE_URL}/api/auth/password-reset/confirm",
+            json={"token": token, "new_password": new_password},
+            timeout=15
+        )
+        data = response.json()
+        if response.status_code == 200:
+            return True, data.get("message", "Password reset successful.")
+        message = data.get("message", "Password reset failed.")
+        if "errors" in data:
+            errors = data["errors"]
+            if isinstance(errors, dict):
+                msgs = []
+                for field, v in errors.items():
+                    msgs.extend(v if isinstance(v, list) else [str(v)])
+                message += ": " + ", ".join(msgs)
+        return False, message
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"

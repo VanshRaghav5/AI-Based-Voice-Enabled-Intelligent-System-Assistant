@@ -53,6 +53,38 @@ class RegisterSchema(Schema):
             raise ValidationError('Password must contain at least one number')
 
 
+class PasswordResetRequestSchema(Schema):
+    """Schema for password reset request validation."""
+    email = fields.Email(
+        required=True,
+        error_messages={'required': 'Email is required'}
+    )
+
+
+class PasswordResetConfirmSchema(Schema):
+    """Schema for password reset confirmation validation."""
+    token = fields.Str(
+        required=True,
+        validate=validate.Length(min=20, max=256),
+        error_messages={'required': 'Reset token is required'}
+    )
+    new_password = fields.Str(
+        required=True,
+        validate=validate.Length(min=6, max=100),
+        error_messages={'required': 'New password is required'}
+    )
+
+    @validates('new_password')
+    def validate_new_password(self, value, **kwargs):
+        """Validate new password strength."""
+        if not re.search(r'[A-Z]', value):
+            raise ValidationError('Password must contain at least one uppercase letter')
+        if not re.search(r'[a-z]', value):
+            raise ValidationError('Password must contain at least one lowercase letter')
+        if not re.search(r'[0-9]', value):
+            raise ValidationError('Password must contain at least one number')
+
+
 class CommandSchema(Schema):
     """Schema for command input validation."""
     command = fields.Str(
@@ -87,7 +119,7 @@ class SettingsSchema(Schema):
         allow_none=True
     )
     language = fields.Str(
-        validate=validate.OneOf(['english', 'hindi', 'spanish', 'french', 'german']),
+        validate=validate.OneOf(['english', 'hindi', 'hinglish', 'spanish', 'french', 'german', 'en', 'hi', 'es', 'fr', 'de']),
         allow_none=True
     )
     memory_enabled = fields.Bool(allow_none=True)

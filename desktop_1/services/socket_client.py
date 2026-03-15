@@ -1,5 +1,6 @@
 import socketio
 from socketio.exceptions import ConnectionError as SocketIOConnectionError
+from services.api_client import load_token
 
 sio = socketio.Client()
 
@@ -11,7 +12,12 @@ def connect():
     """
     try:
         if not sio.connected:
-            sio.connect("http://127.0.0.1:5000")
+            token, _ = load_token()
+            if not token:
+                print("Failed to connect to backend: missing auth token")
+                return False
+
+            sio.connect("http://127.0.0.1:5000", auth={"token": token})
             return True
         return True
     except (SocketIOConnectionError, Exception) as e:

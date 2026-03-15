@@ -29,12 +29,31 @@ if not exist "venv\Scripts\python.exe" (
 REM Create logs folder if needed
 if not exist "logs" mkdir logs
 
-REM Start backend in background
-echo Starting backend...
-start /B "Backend" .\venv\Scripts\python.exe backend\api_service.py > logs\backend.log 2>&1
+REM Check required security env vars
+if "%OMNIASSIST_FLASK_SECRET_KEY%"=="" (
+    echo ERROR: OMNIASSIST_FLASK_SECRET_KEY is not set.
+    echo Set it once in PowerShell:
+    echo   setx OMNIASSIST_FLASK_SECRET_KEY "your-long-random-secret"
+    echo.
+    pause
+    exit /b 1
+)
 
-REM Wait a bit for backend to start
-timeout /t 5 /nobreak >nul
+if "%OMNIASSIST_JWT_SECRET%"=="" (
+    echo ERROR: OMNIASSIST_JWT_SECRET is not set.
+    echo Set it once in PowerShell:
+    echo   setx OMNIASSIST_JWT_SECRET "your-long-random-secret"
+    echo.
+    pause
+    exit /b 1
+)
+
+REM Start backend in background (cmd /c so stdout/stderr are captured in the log)
+echo Starting backend...
+start "Backend" /B cmd /c ".\venv\Scripts\python.exe backend\api_service.py > logs\backend.log 2>&1"
+
+REM Wait for backend to initialise (Whisper model load ~4 s, plus small margin)
+timeout /t 10 /nobreak >nul
 
 REM Start frontend
 echo Starting desktop app...

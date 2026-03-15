@@ -2,6 +2,7 @@
 # Python Virtual Environment
 # ==================================
 venv/
+.venv/
 .env/
 backend/venv/
 
@@ -17,31 +18,73 @@ build/
 dist/
 
 # ==================================
+# Environment / Secrets
+# ==================================
+.env
+*.env
+.env.local
+.env.production
+
+# ==================================
 # Runtime Audio Output (Generated Files)
 # ==================================
 backend/data/audio/
 
 # ==================================
-# Whisper / Torch Cache (Local Model Cache)
+# Runtime Data (Generated at Runtime)
+# ==================================
+backend/data/session_memory.json
+backend/data/delete_history.json
+backend/data/assistant.db
+
+# ==================================
+# SQLite Databases
+# ==================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==================================
+# Whisper / Torch Model Cache
 # ==================================
 .cache/
 
 # ==================================
 # Logs
 # ==================================
+logs/
 *.log
+
+# ==================================
+# Test Coverage Reports
+# ==================================
+htmlcov/
+.coverage
+.coverage.*
+*.coverage
+coverage.xml
+
+# ==================================
+# Pytest Cache
+# ==================================
+.pytest_cache/
+.tox/
 
 # ==================================
 # IDE / Editor
 # ==================================
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # ==================================
 # OS Generated Files
 # ==================================
 .DS_Store
 Thumbs.db
+ehthumbs.db
+desktop.ini
 
 # ==================================
 # Piper Runtime (Binaries & Heavy Assets)
@@ -58,4 +101,10 @@ backend/voice_engine/tts/piper/input.txt
 # Global Audio Files (Generated)
 # ==================================
 *.wav
+
+# ==================================
+# Miscellaneous Artifacts
+# ==================================
 desktop/
+*.bak
+*.tmp
