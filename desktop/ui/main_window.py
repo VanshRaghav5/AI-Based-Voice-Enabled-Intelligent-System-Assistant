@@ -70,12 +70,19 @@ class MainWindow(QtWidgets.QMainWindow):
         root.addLayout(content, 1)
         self.setCentralWidget(central)
 
+        # Tray notifications (Windows)
+        self._tray = QtWidgets.QSystemTrayIcon(self)
+        icon = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_ComputerIcon)
+        self._tray.setIcon(icon)
+        self._tray.setVisible(True)
+
         # Socket client
         self.socket = SocketClient(socket_url=config.socket_url, session=session, bus=bus)
         self.socket.connect()
 
         # Event wiring
         self.bus.connection_status.connect(self._on_connection_status)
+        self.bus.status_changed.connect(self._on_status_changed)
         self.bus.execution_step.connect(self._on_execution_step)
         self.bus.command_result.connect(self._on_command_result)
         self.bus.error.connect(self._on_error)
@@ -96,6 +103,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.state = new_state
         self.status_indicator.set_state(new_state.value)
         self.orb.set_state(new_state.value)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        try:
+            self.socket.disconnect()
+        finally:
+            super().closeEvent(event)
 
     @QtCore.Slot()
     def _on_send(self):
@@ -131,6 +144,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status_indicator.set_confirmation_pending(bool(data.get("pending_confirmation")))
 
     @QtCore.Slot(dict)
+    def _on_status_changed(self, data: dict):
+        sock = (data or {}).get("socket")
+        if sock == "connected":
+            self.status_indicator.set_socket_connected(True)
+        elif sock == "disconnected":
+            self.status_indicator.set_socket_connected(False)
+
+    @QtCore.Slot(dict)
     def _on_execution_step(self, data: dict):
         # Current backend emits only "running" (plan steps). We'll update this once backend streams finish/fail.
         self._set_state(AssistantState.EXECUTING)
@@ -141,13 +162,27 @@ class MainWindow(QtWidgets.QMainWindow):
         message = (data or {}).get("message") or ""
         if message:
             self.conversation.add_assistant(message)
-        self._set_state(AssistantState.IDLE)
+
+        # Show what planned the action (ollama vs fallback), when available.
+        meta = (data or {}).get("meta")
+        plan_source = None
+        if isinstance(meta, dict):
+            trace = meta.get("loop_trace")
+            if isinstance(trace, list) and trace:
+                first = trace[0] if isinstance(trace[0], dict) else {}
+                plan_source = first.get("plan_source")
+        self.status_indicator.set_llm_source(plan_source)
+
+        self._set_state(AssistantState.RESPONDING)
+        self._tray.showMessage("OmniAssist", message or "Task completed.")
+        QtCore.QTimer.singleShot(700, lambda: self._set_state(AssistantState.IDLE))
 
     @QtCore.Slot(dict)
     def _on_error(self, data: dict):
         msg = (data or {}).get("message") or str(data)
         self.conversation.add_system(f"Error: {msg}")
         self._set_state(AssistantState.ERROR)
+        self._tray.showMessage("OmniAssist", msg)
 
     @QtCore.Slot(dict)
     def _on_confirmation_required(self, data: dict):
@@ -181,6 +216,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if msg:
             if status == "success":
                 self.conversation.add_assistant(msg)
+                self._tray.showMessage("OmniAssist", msg)
             else:
                 self.conversation.add_system(msg)
         self._set_state(AssistantState.IDLE)
