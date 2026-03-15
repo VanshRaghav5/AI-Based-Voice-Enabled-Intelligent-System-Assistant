@@ -2,6 +2,7 @@
 
 import customtkinter as ctk
 from typing import Callable, Optional
+from ui.forgot_password_window import ForgotPasswordWindow
 
 
 class LoginWindow(ctk.CTkToplevel):
@@ -151,8 +152,22 @@ class LoginWindow(ctk.CTkToplevel):
             hover_color="#00aadd",
             command=self._handle_login
         )
-        self.login_button.pack(fill="x", padx=18, pady=(0, 18))
-        
+        self.login_button.pack(fill="x", padx=18, pady=(0, 8))
+
+        # Forgot password link
+        forgot_btn = ctk.CTkButton(
+            form_frame,
+            text="🔑 Forgot password?",
+            font=("Segoe UI", 10),
+            height=28,
+            corner_radius=6,
+            fg_color="transparent",
+            text_color="gray70",
+            hover_color="gray25",
+            command=self._handle_forgot_password
+        )
+        forgot_btn.pack(fill="x", padx=18, pady=(0, 12))
+
         # Admin info box
         admin_frame = ctk.CTkFrame(form_frame, fg_color="gray25", corner_radius=8)
         admin_frame.pack(fill="x", padx=18, pady=(0, 18))
@@ -276,6 +291,10 @@ class LoginWindow(ctk.CTkToplevel):
             self.error_label.configure(text=f"❌ {message}")
             self.login_button.configure(state="normal", text="🔓 Login")
     
+    def _handle_forgot_password(self):
+        """Open the forgot-password wizard."""
+        ForgotPasswordWindow(self)
+
     def _handle_register(self):
         """Handle register button click."""
         if self.on_register:

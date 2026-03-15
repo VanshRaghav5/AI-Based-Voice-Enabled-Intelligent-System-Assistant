@@ -27,7 +27,14 @@ from backend.core.persona import persona
 from backend.config.assistant_config import assistant_config
 from backend.auth.auth_service import AuthService, PasswordHasher
 from backend.middleware.auth_middleware import login_required, admin_required
-from backend.middleware.validation import LoginSchema, RegisterSchema, CommandSchema, SettingsSchema
+from backend.middleware.validation import (
+    LoginSchema,
+    RegisterSchema,
+    CommandSchema,
+    SettingsSchema,
+    PasswordResetRequestSchema,
+    PasswordResetConfirmSchema,
+)
 from backend.database import SessionLocal, init_db
 from backend.database.models import User
 import threading
@@ -36,10 +43,35 @@ from functools import lru_cache
 from marshmallow import ValidationError
 import time
 
+
+def _get_required_env(name: str) -> str:
+    """Read a required environment variable and fail fast if missing."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(
+            f"Missing required environment variable: {name}. "
+            "Set it before starting the API service."
+        )
+    return value
+
+
+def _get_allowed_origins() -> list:
+    """Parse trusted CORS origins from environment."""
+    raw = os.environ.get(
+        "OMNIASSIST_CORS_ALLOWED_ORIGINS",
+        "http://127.0.0.1:5000,http://localhost:5000",
+    )
+    origins = [item.strip() for item in raw.split(",") if item.strip()]
+    return origins or ["http://127.0.0.1:5000", "http://localhost:5000"]
+
+
+APP_SECRET_KEY = _get_required_env("OMNIASSIST_FLASK_SECRET_KEY")
+ALLOWED_ORIGINS = _get_allowed_origins()
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-change-this'
-CORS(app)  # Enable CORS for all routes
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.config['SECRET_KEY'] = APP_SECRET_KEY
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
+socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS)
 
 # Initialize rate limiter
 limiter = Limiter(
@@ -59,6 +91,49 @@ wake_word_detector: Optional[WakeWordDetector] = None
 # Cache for recent commands to avoid duplicate processing
 _command_cache = {}
 _cache_timeout = 1.0  # 1 second cache for duplicate commands
+_socket_users: Dict[str, Dict[str, Any]] = {}
+
+
+@app.after_request
+def apply_security_headers(response):
+    """Set baseline HTTP security headers for API responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "microphone=(), camera=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    if request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+def _authenticate_socket(auth_payload):
+    """Validate socket auth payload and return current user payload."""
+    token = ""
+    if isinstance(auth_payload, dict):
+        token = str(auth_payload.get("token", "")).strip()
+
+    if not token:
+        return False, "Missing token", None
+
+    db = SessionLocal()
+    try:
+        auth_service = AuthService(db)
+        valid, message, payload = auth_service.verify_token(token)
+        if not valid:
+            return False, message, None
+
+        user = auth_service.get_user_by_id(payload["user_id"])
+        if not user or not user.is_active:
+            return False, "User not found or inactive", None
+
+        return True, "ok", {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+        }
+    finally:
+        db.close()
 
 
 def emit_execution_steps(plan_data):
@@ -130,11 +205,20 @@ def process_command():
     Returns:
         JSON with command processing result
     """
-    data = request.json
+    data = request.json or {}
     command = data.get('command', '')
-    
-    if not command:
-        return jsonify({'error': 'No command provided'}), 400
+    language = data.get('language')
+
+    try:
+        schema = CommandSchema()
+        validated = schema.load({'command': command})
+        command = validated['command']
+    except ValidationError as err:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation failed',
+            'errors': err.messages
+        }), 400
     
     try:
         logger.info(f"[API] Processing command: {command}")
@@ -159,7 +243,12 @@ def process_command():
         
         # Don't duplicate LLM calls - let controller handle plan generation
         # Process the command (this handles plan generation internally)
-        result = controller.process(command)
+        result = controller.process(command, language=language)
+
+        # Emit the actual executed plan steps from controller state
+        executed_plan = controller.get_last_plan_data()
+        if executed_plan and isinstance(executed_plan, dict):
+            emit_execution_steps(executed_plan)
         
         # Check if confirmation is required
         if result.get('status') == 'confirmation_required':
@@ -312,6 +401,7 @@ def wake_word_status():
 
 
 @app.route('/api/confirm', methods=['POST'])
+@login_required
 def confirm_action():
     """
     Confirm or reject a pending action
@@ -351,6 +441,7 @@ def confirm_action():
 
 
 @app.route('/api/speak', methods=['POST'])
+@login_required
 def speak_text():
     """
     Make the assistant speak text
@@ -401,6 +492,7 @@ def health_check():
 
 @app.route('/api/settings', methods=['POST'])
 @login_required
+@admin_required
 @limiter.limit("20 per minute")
 def update_settings():
     """
@@ -501,6 +593,7 @@ def update_settings():
 
 
 @app.route('/api/settings', methods=['GET'])
+@login_required
 def get_settings():
     """
     Get current assistant settings
@@ -730,12 +823,101 @@ def verify_token():
     }), 200
 
 
+@app.route('/api/auth/password-reset/request', methods=['POST'])
+@limiter.limit("5 per hour")
+def password_reset_request():
+    """Request a password reset email for an account."""
+    try:
+        schema = PasswordResetRequestSchema()
+        data = schema.load(request.json)
+
+        db = SessionLocal()
+        auth_service = AuthService(db)
+        success, message = auth_service.request_password_reset(
+            email=data['email'],
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+        db.close()
+
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': message
+            }), 200
+
+        return jsonify({
+            'status': 'error',
+            'message': message
+        }), 500
+
+    except ValidationError as err:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation failed',
+            'errors': err.messages
+        }), 400
+    except Exception as e:
+        logger.error(f"[Auth] Password reset request error: {e}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'Password reset request failed: {str(e)}'
+        }), 500
+
+
+@app.route('/api/auth/password-reset/confirm', methods=['POST'])
+@limiter.limit("10 per hour")
+def password_reset_confirm():
+    """Confirm password reset with one-time token and a new password."""
+    try:
+        schema = PasswordResetConfirmSchema()
+        data = schema.load(request.json)
+
+        db = SessionLocal()
+        auth_service = AuthService(db)
+        success, message = auth_service.reset_password_with_token(
+            token=data['token'],
+            new_password=data['new_password']
+        )
+        db.close()
+
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': message
+            }), 200
+
+        return jsonify({
+            'status': 'error',
+            'message': message
+        }), 400
+
+    except ValidationError as err:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation failed',
+            'errors': err.messages
+        }), 400
+    except Exception as e:
+        logger.error(f"[Auth] Password reset confirm error: {e}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'Password reset failed: {str(e)}'
+        }), 500
+
+
 # ============== WEBSOCKET EVENTS ==============
 
 @socketio.on('connect')
-def handle_connect():
+def handle_connect(auth):
     """Handle client connection"""
-    logger.info('[WebSocket] Client connected')
+    valid, message, socket_user = _authenticate_socket(auth)
+    if not valid:
+        logger.warning(f"[WebSocket] Authentication failed: {message}")
+        return False
+
+    _socket_users[request.sid] = socket_user
+    logger.info(f"[WebSocket] Client connected: {socket_user['username']} ({request.sid})")
     emit('connection_status', {
         'status': 'connected',
         'listening': is_listening,
@@ -747,7 +929,8 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
-    logger.info('[WebSocket] Client disconnected')
+    _socket_users.pop(request.sid, None)
+    logger.info(f"[WebSocket] Client disconnected: {request.sid}")
 
 
 @socketio.on('send_command')
@@ -759,22 +942,29 @@ def handle_command(data):
         data: Dictionary containing 'command' key
     """
     command = data.get('command', '')
-    
-    if not command:
-        emit('error', {'message': 'No command provided'})
+    language = data.get('language') if isinstance(data, dict) else None
+
+    if request.sid not in _socket_users:
+        emit('error', {'message': 'Authentication required'})
         return
     
     try:
-        logger.info(f"[WebSocket] Processing command: {command}")
-        result = controller.process(command)
+        schema = CommandSchema()
+        validated = schema.load({'command': command})
+        command = validated['command']
+    except ValidationError as err:
+        emit('error', {'message': 'Validation failed', 'errors': err.messages})
+        executed_plan = controller.get_last_plan_data()
+        if executed_plan and isinstance(executed_plan, dict):
+            emit_execution_steps(executed_plan)
         
         # Check if confirmation is required
         if result.get('status') == 'confirmation_required':
             global pending_confirmation
             pending_confirmation = result
-            emit('confirmation_required', result, broadcast=True)
+            emit('confirmation_required', result)
         else:
-            emit('command_result', result, broadcast=True)
+            emit('command_result', result)
             
     except Exception as e:
         logger.error(f"[WebSocket] Error processing command: {e}", exc_info=True)
@@ -900,16 +1090,14 @@ def voice_loop():
                 speak("Shutting down assistant. Goodbye!")
                 break
             
-            # Process the command
-            # Generate plan first to emit steps
-            plan_data = controller.llm_client.generate_plan(text)
-            
-            if plan_data and isinstance(plan_data, dict):
-                # Emit execution steps before processing
-                emit_execution_steps(plan_data)
-            
-            # Process the command
+            # Process the command via controller's agent loop
             result = controller.process(text)
+
+            # Emit steps from the loop's executed plan (single source of truth)
+            executed_plan = controller.get_last_plan_data()
+            if executed_plan and isinstance(executed_plan, dict):
+                emit_execution_steps(executed_plan)
+
             logger.info(f"[Voice Loop] Result: {result}")
             
             # Handle confirmation requirement
@@ -956,7 +1144,7 @@ def voice_loop():
 # ============== MAIN ENTRY POINT ==============
 
 def initialize_database():
-    """Initialize database and create default admin user if needed."""
+    """Initialize database and optionally bootstrap an admin from env vars."""
     try:
         # Initialize database tables
         init_db()
@@ -967,22 +1155,35 @@ def initialize_database():
         user_count = db.query(User).count()
         
         if user_count == 0:
-            # Create default admin user
-            auth_service = AuthService(db)
-            success, message, user = auth_service.create_user(
-                username="admin",
-                email="admin@localhost",
-                password="Admin@123",  # Default password - MUST be changed!
-                role="admin"
-            )
-            
-            if success:
-                logger.warning("[Auth] Default admin user created!")
-                logger.warning("[Auth] Username: admin")
-                logger.warning("[Auth] Password: Admin@123")
-                logger.warning("[Auth] ⚠️  PLEASE CHANGE THE DEFAULT PASSWORD IMMEDIATELY!")
+            bootstrap_username = os.environ.get('OMNIASSIST_BOOTSTRAP_ADMIN_USERNAME', '').strip()
+            bootstrap_email = os.environ.get('OMNIASSIST_BOOTSTRAP_ADMIN_EMAIL', '').strip()
+            bootstrap_password = os.environ.get('OMNIASSIST_BOOTSTRAP_ADMIN_PASSWORD', '').strip()
+
+            if bootstrap_username and bootstrap_email and bootstrap_password:
+                auth_service = AuthService(db)
+                success, message, _ = auth_service.create_user(
+                    username=bootstrap_username,
+                    email=bootstrap_email,
+                    password=bootstrap_password,
+                    role="admin"
+                )
+
+                if success:
+                    logger.info("[Auth] Bootstrap admin created from environment variables")
+                    logger.info(f"[Auth] Bootstrap admin username: {bootstrap_username}")
+                else:
+                    logger.error(f"[Auth] Failed to create bootstrap admin: {message}")
+            elif any([bootstrap_username, bootstrap_email, bootstrap_password]):
+                logger.error(
+                    "[Auth] Incomplete admin bootstrap configuration. "
+                    "Set OMNIASSIST_BOOTSTRAP_ADMIN_USERNAME, OMNIASSIST_BOOTSTRAP_ADMIN_EMAIL, "
+                    "and OMNIASSIST_BOOTSTRAP_ADMIN_PASSWORD together."
+                )
             else:
-                logger.error(f"[Auth] Failed to create default admin: {message}")
+                logger.warning(
+                    "[Auth] No users found and no bootstrap admin configured. "
+                    "Register the first user via /api/auth/register (first account becomes admin)."
+                )
         else:
             logger.info(f"[Database] Found {user_count} existing user(s)")
         
