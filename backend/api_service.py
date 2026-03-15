@@ -20,6 +20,7 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from backend.core.assistant_controller import AssistantController
+from backend.core import runtime_events
 from backend.voice_engine.audio_pipeline import listen_for_gui_adaptive, speak
 from backend.voice_engine.wake_word_detector import WakeWordDetector
 from backend.config.logger import logger
@@ -80,6 +81,7 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"],
     storage_uri="memory://"
 )
+runtime_events.set_emitter(lambda event, payload: socketio.emit(event, payload))
 
 # Global state
 controller = AssistantController()
@@ -245,10 +247,7 @@ def process_command():
         # Process the command (this handles plan generation internally)
         result = controller.process(command, language=language)
 
-        # Emit the actual executed plan steps from controller state
-        executed_plan = controller.get_last_plan_data()
-        if executed_plan and isinstance(executed_plan, dict):
-            emit_execution_steps(executed_plan)
+        # Step progress is emitted in real-time by MultiExecutor via runtime_events.
         
         # Check if confirmation is required
         if result.get('status') == 'confirmation_required':
@@ -954,9 +953,7 @@ def handle_command(data):
         command = validated['command']
     except ValidationError as err:
         emit('error', {'message': 'Validation failed', 'errors': err.messages})
-        executed_plan = controller.get_last_plan_data()
-        if executed_plan and isinstance(executed_plan, dict):
-            emit_execution_steps(executed_plan)
+        # Step progress is emitted in real-time by MultiExecutor via runtime_events.
         
         # Check if confirmation is required
         if result.get('status') == 'confirmation_required':
@@ -1094,9 +1091,7 @@ def voice_loop():
             result = controller.process(text)
 
             # Emit steps from the loop's executed plan (single source of truth)
-            executed_plan = controller.get_last_plan_data()
-            if executed_plan and isinstance(executed_plan, dict):
-                emit_execution_steps(executed_plan)
+                # Step progress is emitted in real-time by MultiExecutor via runtime_events.
 
             logger.info(f"[Voice Loop] Result: {result}")
             
