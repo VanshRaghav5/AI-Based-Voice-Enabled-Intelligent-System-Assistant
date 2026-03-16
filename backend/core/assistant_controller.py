@@ -2,14 +2,15 @@ from backend.llm.llm_client import LLMClient
 from backend.core.tool_registry import ToolRegistry
 from backend.core.executor import Executor
 from backend.core.multi_executor import MultiExecutor
-from backend.memory.session_state import SessionState
+from backend.memory.memory_store import MemoryStore
+from backend.memory.command_processor import MemoryCommandProcessor
 from backend.automation.registry_tools import register_all_tools
 from backend.config.logger import logger
 from backend.config.assistant_config import assistant_config
 from backend.core.persona import persona
+from backend.core.response_formatter import ResponseFormatter
 from backend.core.translation_service import TranslationService
 import json
-import re
 
 
 class AssistantController:
@@ -28,14 +29,17 @@ class AssistantController:
         self.multi_executor = MultiExecutor(self.registry)
         
         # Initialize session state
-        self.memory = SessionState()
+        self.memory = MemoryStore()
+        self.memory_commands = MemoryCommandProcessor(self.memory)
 
         # Optional translator for multi-language command and response handling
         self.translation = TranslationService()
+        self.response_formatter = ResponseFormatter()
         
         # Track pending plan and step for confirmation
         self.pending_plan = None
         self.pending_step_index = 0
+        self.pending_confirmation_result = None
 
         # Agent loop diagnostics for UI and debugging
         self.last_plan_data = None
@@ -83,91 +87,7 @@ class AssistantController:
 
     def _memory_command_response(self, text: str):
         """Handle explicit remember/recall user commands before tool planning."""
-        cleaned = text.strip()
-        lowered = cleaned.lower()
-
-        remember_match = re.match(r"^remember(?: that)?\s+(.+?)\s+(?:is|are|as)\s+(.+)$", cleaned, flags=re.IGNORECASE)
-        if remember_match:
-            key = remember_match.group(1).strip()
-            value = remember_match.group(2).strip()
-            if self.memory.remember_fact(key, value):
-                return {
-                    "status": "success",
-                    "message": persona.stylize_response(f"I will remember that {key} is {value}.", status="success"),
-                    "data": {"memory": {"action": "remember", "key": key, "value": value}}
-                }
-
-        # Explicit recall patterns: "recall X", "what do you remember about X",
-        # "what is my X", "what are my X", "what's my X", "tell me about X"
-        recall_match = re.match(
-            r"^(?:recall|what do you remember about|tell me about"
-            r"|what(?:'s| is| are))\s+(.+?)\??$",
-            cleaned, flags=re.IGNORECASE
-        )
-        if recall_match:
-            key = recall_match.group(1).strip().lower()
-            value = self.memory.recall_fact(key)
-            if value is None:
-                return {
-                    "status": "error",
-                    "message": persona.stylize_response(f"I do not have anything saved for {key}.", status="error"),
-                    "data": {"memory": {"action": "recall", "key": key, "found": False}}
-                }
-            return {
-                "status": "success",
-                "message": persona.stylize_response(f"You told me {key} is {value}.", status="success"),
-                "data": {"memory": {"action": "recall", "key": key, "value": value, "found": True}}
-            }
-
-        # Fuzzy recall: if the query looks like a question and a stored key appears in it
-        if any(q in lowered for q in ["what", "which", "tell me", "do you know", "do you remember"]):
-            facts = self.memory.list_facts()
-            matched_key = None
-            for fkey in sorted(facts.keys(), key=len, reverse=True):  # longest key first
-                if fkey in lowered:
-                    matched_key = fkey
-                    break
-            if matched_key:
-                fvalue = facts[matched_key]
-                return {
-                    "status": "success",
-                    "message": persona.stylize_response(f"You told me {matched_key} is {fvalue}.", status="success"),
-                    "data": {"memory": {"action": "recall", "key": matched_key, "value": fvalue, "found": True}}
-                }
-
-        forget_match = re.match(r"^forget\s+(.+)$", cleaned, flags=re.IGNORECASE)
-        if forget_match:
-            key = forget_match.group(1).strip().lower()
-            removed = self.memory.forget_fact(key)
-            if removed:
-                return {
-                    "status": "success",
-                    "message": persona.stylize_response(f"I forgot {key}.", status="success"),
-                    "data": {"memory": {"action": "forget", "key": key, "removed": True}}
-                }
-            return {
-                "status": "error",
-                "message": persona.stylize_response(f"I could not find {key} in memory.", status="error"),
-                "data": {"memory": {"action": "forget", "key": key, "removed": False}}
-            }
-
-        if lowered in {"list memory", "show memory", "what do you remember", "show remembered facts"}:
-            facts = self.memory.list_facts()
-            if not facts:
-                return {
-                    "status": "success",
-                    "message": persona.stylize_response("I do not have any saved facts yet.", status="success"),
-                    "data": {"memory": {"action": "list", "facts": {}}}
-                }
-
-            preview = "; ".join(f"{k}: {v}" for k, v in list(facts.items())[:10])
-            return {
-                "status": "success",
-                "message": persona.stylize_response(f"Saved memory: {preview}", status="success"),
-                "data": {"memory": {"action": "list", "facts": facts}}
-            }
-
-        return None
+        return self.memory_commands.process(text)
 
     def get_last_plan_data(self):
         """Expose latest plan generated by the active agent loop."""
@@ -177,10 +97,20 @@ class AssistantController:
         """Expose loop execution trace for diagnostics."""
         return self.last_loop_trace
 
+    def has_pending_confirmation(self):
+        """Return whether this controller is waiting for user confirmation."""
+        return self.pending_plan is not None
+
+    def get_pending_confirmation(self):
+        """Return the latest pending confirmation payload, if any."""
+        return self.pending_confirmation_result
+
     def _finalize_response(self, result: dict, language: str, original_text: str, processed_text: str):
         """Apply output translation and annotate translation metadata."""
         if not isinstance(result, dict):
             return result
+
+        result = self.response_formatter.format(result)
 
         message = result.get("message", "")
         translated_message, translated_out = self.translation.translate_response_from_english(message, language)
@@ -288,17 +218,18 @@ class AssistantController:
                     self.pending_step_index = last_result.get("step_index", 0)
                     confirm_msg = last_result.get("message", "Confirm action?")
                     confirm_msg = persona.stylize_response(confirm_msg, status="confirmation_required")
-                    logger.info(f"[AssistantController] Waiting for confirmation: {confirm_msg}")
-                    self.last_loop_trace = loop_trace
-                    return self._finalize_response({
+                    self.pending_confirmation_result = {
                         "status": "confirmation_required",
                         "message": confirm_msg,
                         "meta": {
                             "loop_trace": loop_trace,
                             "iteration": iteration,
                         },
-                        "data": {}
-                    }, active_language, text, processed_text)
+                        "data": {},
+                    }
+                    logger.info(f"[AssistantController] Waiting for confirmation: {confirm_msg}")
+                    self.last_loop_trace = loop_trace
+                    return self._finalize_response(self.pending_confirmation_result, active_language, text, processed_text)
 
                 # Success ends the loop
                 if last_result.get("status") == "success":
@@ -313,7 +244,8 @@ class AssistantController:
             if last_result:
                 status = last_result.get("status", "success")
                 message = last_result.get("message", "Command completed")
-                last_result["message"] = persona.stylize_response(message, status=status)
+                clearer_result = self.response_formatter.format(last_result)
+                last_result["message"] = persona.stylize_response(clearer_result.get("message", message), status=status)
                 last_result["meta"] = {
                     "iterations_used": len({item.get("iteration") for item in loop_trace if item.get("iteration")}),
                     "loop_trace": loop_trace,
@@ -365,6 +297,7 @@ class AssistantController:
         
         # Clear pending plan
         self.pending_plan = None
+        self.pending_confirmation_result = None
         
         # Store in memory
         for result in results:
@@ -373,6 +306,7 @@ class AssistantController:
         # If continuation hits another critical step, keep the same pending plan
         if results and results[-1].get("status") == "confirmation_required":
             self.pending_step_index = results[-1].get("step_index", self.pending_step_index)
+            self.pending_confirmation_result = results[-1]
             return results[-1]
 
         return results[-1] if results else {"status": "cancelled", "message": "Action cancelled"}

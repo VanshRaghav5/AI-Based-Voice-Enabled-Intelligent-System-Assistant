@@ -1,4 +1,4 @@
-"""Database models for authentication and authorization."""
+"""Database models for authentication, authorization, and scheduled tasks."""
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
@@ -25,6 +25,11 @@ class User(Base):
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens = relationship(
         "PasswordResetToken",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    scheduled_tasks = relationship(
+        "ScheduledTask",
         back_populates="user",
         cascade="all, delete-orphan"
     )
@@ -71,3 +76,32 @@ class PasswordResetToken(Base):
 
     def __repr__(self):
         return f"<PasswordResetToken(user_id={self.user_id}, used={self.used_at is not None})>"
+
+
+class ScheduledTask(Base):
+    """Scheduled automation task tied to a user account."""
+    __tablename__ = "scheduled_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    command = Column(String(1000), nullable=False)
+    language = Column(String(20), nullable=True)
+    trigger_type = Column(String(20), nullable=False)
+    run_at = Column(DateTime, nullable=True)
+    interval_seconds = Column(Integer, nullable=True)
+    cron_expression = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_run_at = Column(DateTime, nullable=True)
+    next_run_at = Column(DateTime, nullable=True)
+    last_status = Column(String(20), nullable=True)
+    last_message = Column(String(500), nullable=True)
+
+    user = relationship("User", back_populates="scheduled_tasks")
+
+    def __repr__(self):
+        return (
+            f"<ScheduledTask(id={self.id}, user_id={self.user_id}, trigger_type='{self.trigger_type}', "
+            f"active={self.is_active})>"
+        )
