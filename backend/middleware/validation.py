@@ -1,6 +1,6 @@
 """Input validation schemas using Marshmallow."""
 
-from marshmallow import Schema, fields, validate, validates, ValidationError
+from marshmallow import Schema, fields, validate, validates, validates_schema, ValidationError
 import re
 
 
@@ -123,6 +123,46 @@ class SettingsSchema(Schema):
         allow_none=True
     )
     memory_enabled = fields.Bool(allow_none=True)
+
+
+class ScheduleTaskSchema(Schema):
+    """Schema for scheduled task creation and recurring task validation."""
+    name = fields.Str(
+        required=False,
+        allow_none=True,
+        validate=validate.Length(min=1, max=100)
+    )
+    command = fields.Str(
+        required=True,
+        validate=validate.Length(min=1, max=1000),
+        error_messages={'required': 'Command is required'}
+    )
+    language = fields.Str(
+        required=False,
+        allow_none=True,
+        validate=validate.OneOf(['english', 'hindi', 'hinglish', 'spanish', 'french', 'german', 'en', 'hi', 'es', 'fr', 'de'])
+    )
+    trigger_type = fields.Str(
+        required=True,
+        validate=validate.OneOf(['one_time', 'interval', 'cron']),
+        error_messages={'required': 'Trigger type is required'}
+    )
+    run_at = fields.DateTime(required=False, allow_none=True)
+    interval_seconds = fields.Int(required=False, allow_none=True, validate=validate.Range(min=60))
+    cron_expression = fields.Str(required=False, allow_none=True, validate=validate.Length(min=5, max=100))
+
+    @validates_schema
+    def validate_trigger_fields(self, data, **kwargs):
+        trigger_type = data.get('trigger_type')
+
+        if trigger_type == 'one_time' and not data.get('run_at'):
+            raise ValidationError({'run_at': ['run_at is required for one_time schedules']})
+
+        if trigger_type == 'interval' and not data.get('interval_seconds'):
+            raise ValidationError({'interval_seconds': ['interval_seconds is required for interval schedules']})
+
+        if trigger_type == 'cron' and not data.get('cron_expression'):
+            raise ValidationError({'cron_expression': ['cron_expression is required for cron schedules']})
 
 
 def sanitize_input(data: str) -> str:

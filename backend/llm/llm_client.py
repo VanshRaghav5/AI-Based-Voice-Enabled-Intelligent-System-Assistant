@@ -148,16 +148,24 @@ class LLMClient:
             try:
                 # Try to parse as JSON
                 plan = json.loads(output)
-                self.last_source = "ollama"
-                return plan
+                if self._plan_has_steps(plan):
+                    self.last_source = "ollama"
+                    return plan
+                logger.warning("[LLMClient] Ollama returned plan without executable steps, using fallback")
+                self.last_source = "fallback"
+                return self._create_fallback_plan(prompt)
             except json.JSONDecodeError:
                 # Try to extract JSON from markdown code blocks
                 json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', output, re.DOTALL)
                 if json_match:
                     try:
                         plan = json.loads(json_match.group(1))
-                        self.last_source = "ollama"
-                        return plan
+                        if self._plan_has_steps(plan):
+                            self.last_source = "ollama"
+                            return plan
+                        logger.warning("[LLMClient] Extracted JSON plan has no steps, using fallback")
+                        self.last_source = "fallback"
+                        return self._create_fallback_plan(prompt)
                     except json.JSONDecodeError:
                         pass
                 
@@ -178,6 +186,56 @@ class LLMClient:
             self.last_source = "fallback"
             return self._create_fallback_plan(prompt)
 
+    def _plan_has_steps(self, plan) -> bool:
+        """Return True when a parsed plan contains executable steps."""
+        if not isinstance(plan, dict):
+            return False
+        steps = plan.get("steps")
+        if isinstance(steps, list) and len(steps) > 0:
+            return True
+        tool_calls = plan.get("tool_calls")
+        if isinstance(tool_calls, list) and len(tool_calls) > 0:
+            return True
+        return False
+
+    def _extract_user_command_from_prompt(self, prompt: str) -> str:
+        """Extract the real user command from planning/replan prompt wrappers."""
+        if not prompt:
+            return ""
+
+        # Prefer explicit USER COMMAND field when present.
+        command_matches = re.findall(r"USER COMMAND:\s*(.+)", prompt, flags=re.IGNORECASE)
+        if command_matches:
+            return command_matches[-1].strip()
+
+        # For replan prompt, the first non-empty line is generally the original command.
+        for line in str(prompt).splitlines():
+            candidate = line.strip()
+            if candidate and not candidate.lower().startswith("memory context"):
+                return candidate
+
+        return str(prompt).strip()
+
+    def _normalize_command_text(self, text: str) -> str:
+        """Normalize polite/free-form phrasing while preserving task keywords."""
+        normalized = str(text or "").lower()
+
+        # Remove common conversational wrappers that hurt strict keyword matching.
+        wrapper_patterns = [
+            r"\b(can you|could you|would you|will you|please|kindly)\b",
+            r"\bfor me\b",
+            r"\bhey\s+assistant\b",
+            r"\bassistant\b",
+            r"\bplz\b",
+        ]
+        for pattern in wrapper_patterns:
+            normalized = re.sub(pattern, " ", normalized)
+
+        # Normalize punctuation and whitespace.
+        normalized = re.sub(r"[^a-z0-9:\\/_\-.\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized
+
     def _create_fallback_plan(self, prompt: str):
         """Create a fallback plan based on comprehensive keyword matching.
         
@@ -187,9 +245,10 @@ class LLMClient:
         Returns:
             A basic execution plan as a dict with steps, or None if no match.
         """
-        logger.info(f"[LLMClient] Matching keywords in: {prompt}")
-        
-        prompt_lower = prompt.lower()
+        effective_prompt = self._extract_user_command_from_prompt(prompt)
+        logger.info(f"[LLMClient] Matching keywords in user command: {effective_prompt}")
+
+        prompt_lower = self._normalize_command_text(effective_prompt)
         steps = []
         
         # WhatsApp commands
@@ -222,16 +281,16 @@ class LLMClient:
         
         # Browser commands - YouTube  
         elif any(x in prompt_lower for x in ["youtube", "you tube"]):
-            if any(x in prompt_lower for x in ["open", "launch", "start", "go", "play"]):
+            if any(x in prompt_lower for x in ["open", "launch", "start", "go", "play", "run"]):
                 steps.append({"name": "browser.open_youtube", "args": {}})
             elif "search" in prompt_lower:
-                query = self._extract_search_query(prompt)
+                query = self._extract_search_query(effective_prompt)
                 steps.append({"name": "browser.search_google", "args": {"query": f"youtube {query}"}})
         
         # Browser commands - Google search
         elif any(x in prompt_lower for x in ["google", "search"]):
             if "google" in prompt_lower or "search" in prompt_lower:
-                query = self._extract_search_query(prompt)
+                query = self._extract_search_query(effective_prompt)
                 if query:
                     steps.append({"name": "browser.search_google", "args": {"query": query}})
                 else:
@@ -240,18 +299,18 @@ class LLMClient:
         
         # Browser commands - Open URL
         elif any(x in prompt_lower for x in ["http://", "https://", ".com", ".org", ".net"]):
-            url = self._extract_url(prompt)
+            url = self._extract_url(effective_prompt)
             if url:
                 steps.append({"name": "browser.open_url", "args": {"url": url}})
         
         # App launcher - specific apps
-        elif any(x in prompt_lower for x in ["open", "launch", "start"]):
-            app_name = self._extract_app_name(prompt)
+        elif any(x in prompt_lower for x in ["open", "launch", "start", "run"]):
+            app_name = self._extract_app_name(effective_prompt)
             if app_name and app_name not in ["file", "folder", "document"]:
                 steps.append({"name": "app.open", "args": {"app_name": app_name}})
             # Otherwise fall through to file open commands
             elif any(x in prompt_lower for x in ["file", "document"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if path:
                     steps.append({"name": "file.open", "args": {"path": path}})
                 else:
@@ -262,12 +321,12 @@ class LLMClient:
         # File create commands
         elif any(x in prompt_lower for x in ["create", "make", "new"]):
             if any(x in prompt_lower for x in ["file"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if not path:
                     path = os.path.expanduser("~\\Desktop\\new_file.txt")
                 steps.append({"name": "file.create", "args": {"path": path}})
             elif any(x in prompt_lower for x in ["folder", "directory"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if not path:
                     path = os.path.expanduser("~\\Desktop\\new_folder")
                 steps.append({"name": "folder.create", "args": {"path": path}})
@@ -275,20 +334,20 @@ class LLMClient:
         # File delete commands
         elif any(x in prompt_lower for x in ["delete", "remove", "erase"]):
             if any(x in prompt_lower for x in ["file"]):
-                path = self._extract_path(prompt)
+                path = self._extract_path(effective_prompt)
                 if path:
                     steps.append({"name": "file.delete", "args": {"path": path}})
                 else:
                     # Try to create a default path if no path specified
                     steps.append({"name": "file.delete", "args": {"path": ""}})
             elif any(x in prompt_lower for x in ["folder", "directory"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if path:
                     steps.append({"name": "folder.delete", "args": {"path": path}})
         
         # File move/copy commands
         elif any(x in prompt_lower for x in ["move", "copy", "rename"]):
-            source = self._extract_path(prompt)
+            source = self._extract_path(effective_prompt)
             if source:
                 steps.append({"name": "file.move", "args": {"source": source, "destination": ""}})
         
@@ -301,7 +360,7 @@ class LLMClient:
             elif any(x in prompt_lower for x in ["set", "to"]):
                 # Extract brightness level from command like "set brightness to 50"
                 import re
-                match = re.search(r'(\d+)', prompt)
+                match = re.search(r'(\d+)', effective_prompt)
                 if match:
                     level = int(match.group(1))
                     steps.append({"name": "display.brightness.set", "args": {"level": level}})
@@ -314,7 +373,7 @@ class LLMClient:
                 steps.append({"name": "clipboard.paste", "args": {}})
             elif any(x in prompt_lower for x in ["copy"]):
                 # Try to extract text to copy
-                text = self._extract_clipboard_text(prompt)
+                text = self._extract_clipboard_text(effective_prompt)
                 if text:
                     steps.append({"name": "clipboard.copy", "args": {"text": text}})
         
@@ -327,7 +386,7 @@ class LLMClient:
             elif any(x in prompt_lower for x in ["minimize"]) and not "all" in prompt_lower:
                 steps.append({"name": "window.minimize", "args": {}})
             elif any(x in prompt_lower for x in ["switch", "change"]):
-                title = self._extract_window_title(prompt)
+                title = self._extract_window_title(effective_prompt)
                 if title:
                     steps.append({"name": "window.switch", "args": {"window_title": title}})
             elif any(x in prompt_lower for x in ["task view", "all windows"]):
@@ -396,13 +455,19 @@ class LLMClient:
         # File search - must come after other commands to avoid conflicts
         elif any(x in prompt_lower for x in ["search", "find", "locate"]):
             if any(x in prompt_lower for x in ["file", "files", "for file"]):
-                term = self._extract_filename(prompt)
+                term = self._extract_filename(effective_prompt)
                 if term:
                     steps.append({"name": "file.search", "args": {"filename": term}})
         
         if not steps:
-            logger.warning(f"[LLMClient] No keyword match for: {prompt}")
+            logger.warning(f"[LLMClient] No keyword match for normalized input: {prompt_lower}")
             return None
+
+        # Backward-compatible output shape used by some tests and parser paths.
+        for step in steps:
+            if isinstance(step, dict):
+                if "name" in step and "tool" not in step:
+                    step["tool"] = step["name"]
         
         logger.info(f"[LLMClient] Generated {len(steps)} fallback steps: {steps}")
         return {"steps": steps}

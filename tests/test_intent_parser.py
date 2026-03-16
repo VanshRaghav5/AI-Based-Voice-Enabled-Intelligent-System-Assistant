@@ -125,6 +125,52 @@ class TestLLMClient:
         # Assert
         assert plan is None or len(plan.get("steps", [])) == 0
 
+    def test_fallback_understands_polite_open_youtube_phrase(self):
+        """Fallback should handle conversational phrasing, not only strict templates."""
+        from backend.llm.llm_client import LLMClient
+        client = LLMClient()
+
+        plan = client._create_fallback_plan("could you please open youtube for me")
+
+        assert plan is not None
+        assert "steps" in plan
+        assert plan["steps"][0].get("name") == "browser.open_youtube"
+
+    def test_fallback_uses_user_command_from_wrapped_prompt(self):
+        """Fallback should parse USER COMMAND payload even when prompt includes context wrappers."""
+        from backend.llm.llm_client import LLMClient
+        client = LLMClient()
+
+        wrapped = (
+            "MEMORY CONTEXT:\n"
+            "- last_file_path: None\n"
+            "USER COMMAND: please increase the volume\n"
+            "REPLAN ITERATION: 2"
+        )
+        plan = client._create_fallback_plan(wrapped)
+
+        assert plan is not None
+        assert "steps" in plan
+        assert plan["steps"][0].get("name") == "system.volume.up"
+
+    def test_generate_plan_falls_back_when_ollama_plan_has_no_steps(self):
+        """If Ollama returns JSON without executable steps, client should fallback to keyword parsing."""
+        from backend.llm.llm_client import LLMClient
+        client = LLMClient()
+
+        client.ollama_available = True
+        client.session = MagicMock()
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_response.json.return_value = {"response": "{\"status\":\"ok\"}"}
+        client.session.post.return_value = fake_response
+
+        plan = client.generate_plan("open youtube")
+
+        assert plan is not None
+        assert "steps" in plan
+        assert plan["steps"][0].get("name") == "browser.open_youtube"
+
 
 class TestIntentParsing:
     """Test intent parsing and entity extraction."""
