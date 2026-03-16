@@ -91,7 +91,7 @@ class SessionState:
 
     def get_state(self):
         with self._lock:
-            return self._state
+            return SessionStateSchema(**self._serialize_state())
 
     def update(self, updates: dict):
         with self._lock:
