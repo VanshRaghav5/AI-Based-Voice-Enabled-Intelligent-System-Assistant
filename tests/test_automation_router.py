@@ -306,6 +306,37 @@ class TestMultiExecutor:
         # Should return confirmation request
         assert results[-1]["status"] in ["confirmation_required", "success"]
 
+    def test_multi_executor_requires_confirmation_for_system_sleep(self):
+        """System sleep should always stop for confirmation before execution."""
+        from backend.core.tool_registry import ToolRegistry
+        from backend.core.multi_executor import MultiExecutor
+        from backend.automation.base_tool import BaseTool
+
+        class SleepTool(BaseTool):
+            name = "system.sleep"
+            description = "Put system to sleep"
+            risk_level = "medium"
+            requires_confirmation = True
+
+            def execute(self):
+                return {"status": "success", "message": "System going to sleep", "data": {}}
+
+        registry = ToolRegistry()
+        registry.register(SleepTool())
+        multi_executor = MultiExecutor(registry)
+
+        plan = {
+            "steps": [
+                {"tool": "system.sleep", "args": {}}
+            ]
+        }
+
+        results = multi_executor.execute(plan)
+
+        assert len(results) == 1
+        assert results[0]["status"] == "confirmation_required"
+        assert results[0]["tool_name"] == "system.sleep"
+
 
 class TestToolRegistration:
     """Test complete tool registration system."""
