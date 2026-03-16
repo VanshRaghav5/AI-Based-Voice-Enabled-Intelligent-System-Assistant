@@ -11,6 +11,8 @@ class MultiExecutor:
         "folder.delete",
         "system.shutdown",
         "system.restart",
+        "system.sleep",
+        "system.hibernate",
         "file.move",
     }
 
