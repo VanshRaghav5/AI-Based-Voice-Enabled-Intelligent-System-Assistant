@@ -1,4 +1,7 @@
 import webbrowser
+import re
+from urllib.parse import quote_plus
+import requests
 from backend.automation.base_tool import BaseTool
 from backend.automation.error_handler import error_handler, AutomationError
 from backend.config.logger import logger
@@ -132,6 +135,104 @@ def open_youtube() -> dict:
     )
 
 
+def open_youtube_latest_video(query: str) -> dict:
+    """Open the best/latest matching YouTube video for a query."""
+
+    def _open_latest():
+        cleaned_query = str(query or "").strip()
+        if not cleaned_query:
+            raise ValueError("YouTube query cannot be empty")
+
+        search_query = f"{cleaned_query} latest video"
+        search_url = f"https://www.youtube.com/results?search_query={quote_plus(search_query)}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+        }
+
+        logger.info(f"Opening latest YouTube video for query: {cleaned_query}")
+
+        try:
+            response = requests.get(search_url, headers=headers, timeout=8)
+            html = response.text if response.status_code == 200 else ""
+
+            # YouTube HTML contains repeated videoId entries; first one is usually top result.
+            matches = re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
+            seen = set()
+            video_ids = []
+            for match in matches:
+                if match not in seen:
+                    seen.add(match)
+                    video_ids.append(match)
+
+            if video_ids:
+                selected_video_id = _select_best_video_id(video_ids, headers)
+                video_url = f"https://www.youtube.com/watch?v={selected_video_id}&vq=small"
+                success = webbrowser.open(video_url)
+                if not success:
+                    raise AutomationError(
+                        "Browser failed to open YouTube video",
+                        "I found the video but could not open it in your browser."
+                    )
+
+                return {
+                    "status": "success",
+                    "message": f"Opening latest video for {cleaned_query} on YouTube",
+                    "data": {"query": cleaned_query, "url": video_url}
+                }
+
+            # Fallback: open search results if direct video resolution is unavailable.
+            success = webbrowser.open(search_url)
+            if not success:
+                raise AutomationError(
+                    "Browser failed to open YouTube search",
+                    "I could not open YouTube search results in your browser."
+                )
+
+            return {
+                "status": "success",
+                "message": f"Opening YouTube search results for {cleaned_query}",
+                "data": {"query": cleaned_query, "url": search_url}
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to open latest YouTube video for '{cleaned_query}': {e}")
+            raise AutomationError(
+                str(e),
+                "I could not open the latest YouTube video right now. Please try again."
+            )
+
+    return error_handler.wrap_automation(
+        func=_open_latest,
+        operation_name="Open Latest YouTube Video",
+        context={"query": query}
+    )
+
+
+def _select_best_video_id(video_ids, headers):
+    """Pick a non-live candidate when possible to avoid buffering on live streams."""
+    if not video_ids:
+        raise ValueError("No video candidates available")
+
+    for video_id in video_ids[:5]:
+        try:
+            watch_url = f"https://www.youtube.com/watch?v={video_id}"
+            response = requests.get(watch_url, headers=headers, timeout=6)
+            html = response.text if response.status_code == 200 else ""
+            if '"isLiveContent":true' in html or '"isLiveNow":true' in html:
+                logger.info(f"Skipping live YouTube candidate: {video_id}")
+                continue
+            return video_id
+        except Exception as exc:
+            logger.debug(f"Could not validate YouTube candidate {video_id}: {exc}")
+
+    # Fallback to first candidate if validation is inconclusive.
+    return video_ids[0]
+
+
 # =====================================================
 # Tool Classes for Registry Integration
 # =====================================================
@@ -167,3 +268,14 @@ class BrowserOpenYouTubeTool(BaseTool):
     def execute(self):
         """Open YouTube"""
         return open_youtube()
+
+
+class BrowserOpenYouTubeLatestVideoTool(BaseTool):
+    name = "browser.open_youtube_latest_video"
+    description = "Open latest matching YouTube video for a query"
+    risk_level = "low"
+    requires_confirmation = False
+
+    def execute(self, query: str):
+        """Open latest YouTube video for query"""
+        return open_youtube_latest_video(query)
