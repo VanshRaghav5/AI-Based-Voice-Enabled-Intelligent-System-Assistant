@@ -198,9 +198,13 @@ class ChatWindow(ctk.CTkFrame):
         
         self.listening = False
 
+        # Startup connection retries should be silent to avoid stale warning cards.
+        self._startup_connect_retries = 0
+        self._max_startup_connect_retries = 8
+
         self.setup_socket()
         # Delay connection until main loop starts (fixes threading issue)
-        self.after(100, self.attempt_connection)
+        self.after(100, lambda: self.attempt_connection(silent=True))
         
         # Track processing timeout
         self.processing_timeout_id = None
@@ -355,10 +359,11 @@ class ChatWindow(ctk.CTkFrame):
         # For now, just show confirmation
         self.add_message(f"✓ Font size changed to {size}pt", sender="system")
 
-    def attempt_connection(self):
+    def attempt_connection(self, silent=False):
         """Try to connect to backend and update UI accordingly."""
         success = connect()
         if success:
+            self._startup_connect_retries = 0
             self.status_bar.set_connected(True)
             self.add_message(f"✓ {tr('connected_ready', self.ui_language)}", sender="system")
             # Sync wake-word button state with backend.
@@ -370,8 +375,14 @@ class ChatWindow(ctk.CTkFrame):
                 print(f"Error syncing wake word status: {e}")
         else:
             self.status_bar.set_connected(False)
+            if silent:
+                self._startup_connect_retries += 1
+                if self._startup_connect_retries < self._max_startup_connect_retries:
+                    self.after(1000, lambda: self.attempt_connection(silent=True))
+                return
+
             self.add_message(
-                "⚠ Cannot connect to backend.\nPlease start the backend server first:\n> python backend\\api_service.py",
+                "⚠ Cannot connect to backend right now. Please ensure backend is running and try again.",
                 sender="system"
             )
 

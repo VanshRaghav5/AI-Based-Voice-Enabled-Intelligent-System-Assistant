@@ -171,6 +171,32 @@ class TestLLMClient:
         assert "steps" in plan
         assert plan["steps"][0].get("name") == "browser.open_youtube"
 
+    def test_fallback_generates_multistep_youtube_on_chrome_command(self):
+        """Fallback should emit chained app+search steps for advanced browser requests."""
+        from backend.llm.llm_client import LLMClient
+        client = LLMClient()
+
+        plan = client._create_fallback_plan("can you search youtube on chrome and open Mr beast on youtube")
+
+        assert plan is not None
+        assert "steps" in plan
+        assert len(plan["steps"]) >= 2
+        assert plan["steps"][0].get("name") == "app.open"
+        assert plan["steps"][0].get("args", {}).get("app_name") == "chrome"
+        assert plan["steps"][1].get("name") == "browser.open_url"
+        assert "youtube.com/results?search_query=" in plan["steps"][1].get("args", {}).get("url", "")
+
+    def test_fallback_routes_latest_video_request_to_latest_video_tool(self):
+        """Latest/newest video intents should open a video directly, not only search results."""
+        from backend.llm.llm_client import LLMClient
+        client = LLMClient()
+
+        plan = client._create_fallback_plan("open youtube and search mr beast and open his latest video")
+
+        assert plan is not None
+        assert "steps" in plan
+        assert any(step.get("name") == "browser.open_youtube_latest_video" for step in plan["steps"])
+
 
 class TestIntentParsing:
     """Test intent parsing and entity extraction."""

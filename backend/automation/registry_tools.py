@@ -8,7 +8,8 @@ from backend.automation.app_launcher import AppLauncherTool
 from backend.automation.browser_control import (
     BrowserOpenURLTool,
     BrowserSearchGoogleTool,
-    BrowserOpenYouTubeTool
+    BrowserOpenYouTubeTool,
+    BrowserOpenYouTubeLatestVideoTool,
 )
 
 from backend.automation.system.volume import (
@@ -91,6 +92,7 @@ def register_all_tools(registry):
     registry.register(BrowserOpenURLTool())
     registry.register(BrowserSearchGoogleTool())
     registry.register(BrowserOpenYouTubeTool())
+    registry.register(BrowserOpenYouTubeLatestVideoTool())
 
     # Volume Control
     registry.register(VolumeUpTool())
