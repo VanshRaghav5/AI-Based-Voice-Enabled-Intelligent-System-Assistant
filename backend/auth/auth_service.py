@@ -11,15 +11,11 @@ from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from email.message import EmailMessage
 from backend.database.models import User, Session as SessionModel, PasswordResetToken
+from backend.config.secrets import ensure_runtime_secrets
 
 
 # JWT Configuration
-SECRET_KEY = os.environ.get("OMNIASSIST_JWT_SECRET", "").strip()
-if not SECRET_KEY:
-    raise RuntimeError(
-        "Missing required environment variable: OMNIASSIST_JWT_SECRET. "
-        "Set it before starting the backend."
-    )
+SECRET_KEY = ensure_runtime_secrets().get("OMNIASSIST_JWT_SECRET", "").strip()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 PASSWORD_RESET_EXPIRE_MINUTES = 30
