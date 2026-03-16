@@ -42,3 +42,33 @@ def test_response_formatter_makes_errors_clearer():
     })
 
     assert "Please try again" in result["message"]
+
+
+def test_response_formatter_summarizes_youtube_results_url_cleanly():
+    formatter = ResponseFormatter()
+
+    result = formatter.format({
+        "status": "success",
+        "message": "Opening YouTube search results for mr beast",
+        "data": {
+            "query": "mr beast",
+            "url": "https://www.youtube.com/results?search_query=mr+beast"
+        },
+    })
+
+    assert result["message"] == "I opened YouTube results for mr beast."
+
+
+def test_response_formatter_summarizes_youtube_watch_url_cleanly():
+    formatter = ResponseFormatter()
+
+    result = formatter.format({
+        "status": "success",
+        "message": "Opening latest video for mr beast on YouTube",
+        "data": {
+            "query": "mr beast",
+            "url": "https://www.youtube.com/watch?v=abc123def45&vq=small"
+        },
+    })
+
+    assert result["message"] == "I opened the latest YouTube video."

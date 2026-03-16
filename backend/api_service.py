@@ -14,6 +14,11 @@ project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from backend.config.secrets import ensure_runtime_secrets
+
+# Auto-provision required secrets for first-run local desktop UX.
+ensure_runtime_secrets()
+
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -1408,6 +1413,13 @@ def initialize_wake_word():
 
     try:
         enabled = bool(assistant_config.get('wake_word.enabled', False))
+        # Launcher can force-disable wake-word autostart for API stability.
+        env_override = os.environ.get('OMNIASSIST_WAKE_WORD_AUTOSTART', '').strip().lower()
+        if env_override in {'0', 'false', 'no', 'off'}:
+            enabled = False
+        elif env_override in {'1', 'true', 'yes', 'on'}:
+            enabled = True
+
         if not enabled:
             logger.info('[WakeWord] Startup auto-enable is OFF')
             return
