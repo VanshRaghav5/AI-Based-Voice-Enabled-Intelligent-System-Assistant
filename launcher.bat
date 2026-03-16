@@ -39,16 +39,37 @@ if errorlevel 1 (
 REM Create logs folder
 if not exist "logs" mkdir logs
 
+echo [2/4] Preparing secure runtime environment...
+echo Backend will auto-generate secrets on first run.
+
 REM Start backend
 echo.
-echo [2/3] Starting backend API...
+echo [3/4] Starting backend API...
 echo Log: logs\backend.log
 echo.
-start "Backend API" .\venv\Scripts\python.exe backend\api_service.py
+set "OMNIASSIST_WAKE_WORD_AUTOSTART=0"
+start "Backend API" /MIN cmd /c ".\venv\Scripts\python.exe backend\api_service.py > logs\backend.log 2>&1"
 
 REM Wait for backend
 echo Waiting for backend to start...
-timeout /t 10 /nobreak >nul
+set BACKEND_READY=0
+for /L %%I in (1,1,45) do (
+    curl -s http://127.0.0.1:5000/api/health >nul 2>&1
+    if not errorlevel 1 (
+        set BACKEND_READY=1
+        goto BACKEND_READY
+    )
+    timeout /t 1 /nobreak >nul
+)
+
+:BACKEND_READY
+if "%BACKEND_READY%"=="0" (
+    echo [ERROR] Backend did not become healthy in time.
+    echo Showing last log lines:
+    powershell -NoProfile -Command "if (Test-Path 'logs\backend.log') { Get-Content 'logs\backend.log' -Tail 40 }"
+    pause
+    exit /b 1
+)
 
 REM Check backend health
 curl -s http://localhost:5000/api/health >nul 2>&1
@@ -60,7 +81,7 @@ if errorlevel 1 (
 
 REM Start frontend
 echo.
-echo [3/3] Starting desktop UI...
+echo [4/4] Starting desktop UI...
 .\venv\Scripts\python.exe desktop_1\main.py
 
 echo.
