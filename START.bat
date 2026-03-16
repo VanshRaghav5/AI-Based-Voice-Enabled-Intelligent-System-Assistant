@@ -29,33 +29,45 @@ if not exist "venv\Scripts\python.exe" (
 REM Create logs folder if needed
 if not exist "logs" mkdir logs
 
-REM Check required security env vars
-if "%OMNIASSIST_FLASK_SECRET_KEY%"=="" (
-    echo ERROR: OMNIASSIST_FLASK_SECRET_KEY is not set.
-    echo Set it once in PowerShell:
-    echo   setx OMNIASSIST_FLASK_SECRET_KEY "your-long-random-secret"
-    echo.
-    pause
-    exit /b 1
+REM Backend now auto-generates runtime secrets if missing.
+echo Preparing secure runtime environment...
+
+REM If backend is already healthy, skip duplicate startup.
+curl -s http://127.0.0.1:5000/api/health >nul 2>&1
+if not errorlevel 1 (
+    echo Backend already running.
+    goto START_FRONTEND
 )
 
-if "%OMNIASSIST_JWT_SECRET%"=="" (
-    echo ERROR: OMNIASSIST_JWT_SECRET is not set.
-    echo Set it once in PowerShell:
-    echo   setx OMNIASSIST_JWT_SECRET "your-long-random-secret"
-    echo.
-    pause
-    exit /b 1
-)
-
-REM Start backend in background (cmd /c so stdout/stderr are captured in the log)
+REM Start backend in a detached window (not /B) so closing this launcher does not stop API
 echo Starting backend...
-start "Backend" /B cmd /c ".\venv\Scripts\python.exe backend\api_service.py > logs\backend.log 2>&1"
+set "OMNIASSIST_WAKE_WORD_AUTOSTART=0"
+start "Backend" /MIN cmd /c ".\venv\Scripts\python.exe backend\api_service.py > logs\backend.log 2>&1"
 
-REM Wait for backend to initialise (Whisper model load ~4 s, plus small margin)
-timeout /t 10 /nobreak >nul
+REM Wait for backend readiness (up to 45s to allow model load on slower machines)
+set BACKEND_READY=0
+for /L %%I in (1,1,45) do (
+    curl -s http://127.0.0.1:5000/api/health >nul 2>&1
+    if not errorlevel 1 (
+        set BACKEND_READY=1
+        goto BACKEND_OK
+    )
+    timeout /t 1 /nobreak >nul
+)
+
+:BACKEND_OK
+if "%BACKEND_READY%"=="0" (
+    echo ERROR: Backend did not become healthy in time.
+    echo.
+    echo Recent backend log output:
+    powershell -NoProfile -Command "if (Test-Path 'logs\backend.log') { Get-Content 'logs\backend.log' -Tail 30 }"
+    echo.
+    pause
+    exit /b 1
+)
 
 REM Start frontend
+:START_FRONTEND
 echo Starting desktop app...
 start "OmniAssist" .\venv\Scripts\python.exe desktop_1\main.py
 

@@ -30,18 +30,28 @@ class ResponseFormatter:
 
     def _format_success(self, message: str, data: dict) -> str:
         clean = self._cleanup(message)
+        lowered = clean.lower()
 
-        if clean.lower().startswith("opening "):
+        url = str(data.get("url", "") or "")
+        if "youtube.com/watch" in url:
+            return "I opened the latest YouTube video."
+        if "youtube.com/results" in url:
+            query = data.get("query")
+            if query:
+                return f"I opened YouTube results for {query}."
+            return "I opened YouTube search results."
+
+        if lowered.startswith("opening "):
             target = clean[8:].strip()
             if target:
                 return f"I am opening {target}."
 
-        if clean.lower().startswith("opened "):
+        if lowered.startswith("opened "):
             target = clean[7:].strip()
             if target:
                 return f"I opened {target}."
 
-        if clean.lower().startswith("searching google for"):
+        if lowered.startswith("searching google for"):
             query = data.get("query") or clean[len("Searching Google for"):].strip().strip("'\"")
             return f"I searched Google for {query}." if query else "I opened a Google search in your browser."
 
