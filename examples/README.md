@@ -48,3 +48,14 @@ python examples/example_confidence_system.py
 - Main README: [../README.md](../README.md)
 - Backend Code: [../backend/](../backend/)
 - Tests: [../tests/](../tests/)
+
+---
+
+## Runtime Notes
+
+- The assistant now runs a bounded agent loop (`plan -> act -> observe -> replan`).
+- Persistent memory is enabled by default in `backend/data/session_memory.json`.
+- You can validate memory behavior from the app with commands like:
+	- `Remember that office city is Pune`
+	- `Recall office city`
+	- Restart backend, then run `Recall office city` again

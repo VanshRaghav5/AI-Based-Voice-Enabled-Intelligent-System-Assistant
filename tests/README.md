@@ -3,6 +3,11 @@
 ## Overview
 Comprehensive test suite for the AI-Based Voice Intelligent System Assistant.
 
+### Current Runtime Focus (March 2026)
+- Bounded agent loop behavior (`plan -> act -> observe -> replan`)
+- Confirmation resume correctness at pending step index
+- Persistent memory correctness (`backend/data/session_memory.json`)
+
 ## Test Structure
 
 ```

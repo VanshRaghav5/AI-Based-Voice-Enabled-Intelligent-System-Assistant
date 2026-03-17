@@ -2,8 +2,13 @@
 # Python Virtual Environment
 # ==================================
 venv/
+.venv/
 .env/
 backend/venv/
+desktop/venv/
+backend/venv_test/
+%TEMP%/
+
 
 # ==================================
 # Python Cache / Build Files
@@ -17,31 +22,73 @@ build/
 dist/
 
 # ==================================
+# Environment / Secrets
+# ==================================
+.env
+*.env
+.env.local
+.env.production
+
+# ==================================
 # Runtime Audio Output (Generated Files)
 # ==================================
 backend/data/audio/
 
 # ==================================
-# Whisper / Torch Cache (Local Model Cache)
+# Runtime Data (Generated at Runtime)
+# ==================================
+backend/data/session_memory.json
+backend/data/delete_history.json
+backend/data/assistant.db
+
+# ==================================
+# SQLite Databases
+# ==================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==================================
+# Whisper / Torch Model Cache
 # ==================================
 .cache/
 
 # ==================================
 # Logs
 # ==================================
+logs/
 *.log
+
+# ==================================
+# Test Coverage Reports
+# ==================================
+htmlcov/
+.coverage
+.coverage.*
+*.coverage
+coverage.xml
+
+# ==================================
+# Pytest Cache
+# ==================================
+.pytest_cache/
+.tox/
 
 # ==================================
 # IDE / Editor
 # ==================================
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # ==================================
 # OS Generated Files
 # ==================================
 .DS_Store
 Thumbs.db
+ehthumbs.db
+desktop.ini
 
 # ==================================
 # Piper Runtime (Binaries & Heavy Assets)
@@ -58,4 +105,23 @@ backend/voice_engine/tts/piper/input.txt
 # Global Audio Files (Generated)
 # ==================================
 *.wav
-desktop/
+
+# ==================================
+# Miscellaneous Artifacts
+# ==================================
+*.bak
+*.tmp
+
+# ==================================
+# Local Debug / Diagnostic Artifacts
+# ==================================
+dump_hang.py
+hang_dump.txt
+import_trace.txt
+out.txt
+test_import.py
+test_import3.py
+test_import4.py
+test_import5.py
+test_import6.py
+test_import7.py
