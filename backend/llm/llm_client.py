@@ -55,7 +55,8 @@ class LLMClient:
     def _check_ollama(self):
         """Check if Ollama API is available and accessible."""
         try:
-            response = self.session.get(f"{self.ollama_api_url}/api/tags", timeout=5)
+            # Use a plain request (no retry adapter) so a refused connection fails fast
+            response = requests.get(f"{self.ollama_api_url}/api/tags", timeout=2)
             if response.status_code == 200:
                 logger.info(f"[LLMClient] Ollama API is available at: {self.ollama_api_url}")
                 # Check if our model is available

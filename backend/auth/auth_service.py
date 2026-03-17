@@ -2,16 +2,41 @@
 
 import bcrypt
 import jwt
+import hashlib
+import secrets
+import os
+import smtplib
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
-from backend.database.models import User, Session as SessionModel
+from email.message import EmailMessage
+from backend.database.models import User, Session as SessionModel, PasswordResetToken
+from backend.config.logger import logger
 
 
 # JWT Configuration
-SECRET_KEY = "your-secret-key-change-in-production"  # TODO: Move to environment variable
+@lru_cache(maxsize=1)
+def _get_jwt_secret_key() -> str:
+    """Read the JWT secret key from environment.
+
+    Note: this is intentionally *lazy* to avoid import-time crashes.
+    """
+    secret_key = os.environ.get("OMNIASSIST_JWT_SECRET", "").strip()
+    if not secret_key:
+        # Dev-friendly fallback: generate an ephemeral secret so the backend can start.
+        # Tokens will be invalid after restart; set OMNIASSIST_JWT_SECRET for persistence.
+        secret_key = secrets.token_urlsafe(64)
+        os.environ["OMNIASSIST_JWT_SECRET"] = secret_key
+        logger.warning(
+            "[Auth] OMNIASSIST_JWT_SECRET is not set; using an ephemeral generated secret. "
+            "Set OMNIASSIST_JWT_SECRET (or create a .env) to keep sessions valid across restarts."
+        )
+    return secret_key
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
+PASSWORD_RESET_EXPIRE_MINUTES = 30
 
 
 class PasswordHasher:
@@ -147,7 +172,7 @@ class AuthService:
         }
         
         # Generate token
-        token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+        token = jwt.encode(payload, _get_jwt_secret_key(), algorithm=ALGORITHM)
         
         # Store session in database
         session = SessionModel(
@@ -174,7 +199,7 @@ class AuthService:
         """
         try:
             # Decode token
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            payload = jwt.decode(token, _get_jwt_secret_key(), algorithms=[ALGORITHM])
             
             # Check if session exists and is valid
             session = self.db.query(SessionModel).filter(
@@ -212,3 +237,134 @@ class AuthService:
     def get_user_by_id(self, user_id: int) -> Optional[User]:
         """Get user by ID."""
         return self.db.query(User).filter(User.id == user_id).first()
+
+    @staticmethod
+    def _hash_reset_token(token: str) -> str:
+        """Hash a reset token before storing it in the database."""
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _send_password_reset_email(self, recipient: str, username: str, reset_token: str) -> bool:
+        """Send password reset instructions using configured SMTP settings."""
+        smtp_host = os.environ.get("SMTP_HOST")
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        smtp_user = os.environ.get("SMTP_USER")
+        smtp_password = os.environ.get("SMTP_PASSWORD")
+
+        if not smtp_host or not smtp_user or not smtp_password:
+            return False
+
+        reset_link = os.environ.get(
+            "PASSWORD_RESET_URL",
+            f"http://localhost:5000/reset-password?token={reset_token}"
+        )
+
+        msg = EmailMessage()
+        msg["From"] = smtp_user
+        msg["To"] = recipient
+        msg["Subject"] = "OmniAssist Password Reset"
+        msg.set_content(
+            "You requested a password reset for your OmniAssist account.\n\n"
+            f"Username: {username}\n"
+            f"Reset link: {reset_link}\n"
+            f"Reset token: {reset_token}\n\n"
+            "This token expires in 30 minutes and can be used only once.\n"
+            "If you did not request this, you can ignore this email."
+        )
+
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+
+        return True
+
+    def request_password_reset(
+        self,
+        email: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        """Create and email a password reset token.
+
+        Returns a generic success-style response for privacy (no account enumeration).
+        """
+        generic_message = "If an account with that email exists, reset instructions have been sent."
+
+        user = self.db.query(User).filter(User.email == email).first()
+        if not user or not user.is_active:
+            return True, generic_message
+
+        try:
+            # Mark any older unused reset tokens as used before issuing a new one.
+            active_tokens = self.db.query(PasswordResetToken).filter(
+                PasswordResetToken.user_id == user.id,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > datetime.utcnow()
+            ).all()
+
+            for token in active_tokens:
+                token.used_at = datetime.utcnow()
+
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = self._hash_reset_token(raw_token)
+            expires_at = datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
+
+            reset_entry = PasswordResetToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=expires_at,
+                requested_ip=ip_address,
+                user_agent=user_agent
+            )
+
+            self.db.add(reset_entry)
+            self.db.commit()
+
+            try:
+                sent = self._send_password_reset_email(user.email, user.username, raw_token)
+                if not sent:
+                    return False, "Password reset email is not configured on the server."
+            except Exception:
+                return False, "Failed to send password reset email."
+
+            return True, generic_message
+        except Exception as e:
+            self.db.rollback()
+            return False, f"Error requesting password reset: {str(e)}"
+
+    def reset_password_with_token(self, token: str, new_password: str) -> Tuple[bool, str]:
+        """Reset a user's password using a valid one-time token."""
+        token_hash = self._hash_reset_token(token)
+
+        reset_entry = self.db.query(PasswordResetToken).filter(
+            PasswordResetToken.token_hash == token_hash
+        ).first()
+
+        if not reset_entry:
+            return False, "Invalid or expired reset token"
+
+        if reset_entry.used_at is not None:
+            return False, "This reset token has already been used"
+
+        if reset_entry.expires_at < datetime.utcnow():
+            return False, "Invalid or expired reset token"
+
+        user = self.db.query(User).filter(User.id == reset_entry.user_id).first()
+        if not user or not user.is_active:
+            return False, "Account is not available for password reset"
+
+        try:
+            user.hashed_password = PasswordHasher.hash_password(new_password)
+            reset_entry.used_at = datetime.utcnow()
+
+            # Revoke all active sessions to enforce re-login after password change.
+            self.db.query(SessionModel).filter(
+                SessionModel.user_id == user.id,
+                SessionModel.is_valid == True
+            ).update({"is_valid": False}, synchronize_session=False)
+
+            self.db.commit()
+            return True, "Password reset successful. Please log in again."
+        except Exception as e:
+            self.db.rollback()
+            return False, f"Error resetting password: {str(e)}"

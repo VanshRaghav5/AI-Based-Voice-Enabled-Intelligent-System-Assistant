@@ -23,6 +23,11 @@ class User(Base):
     
     # Relationship to sessions
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship(
+        "PasswordResetToken",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<User(username='{self.username}', role='{self.role}', email_verified={self.is_email_verified})>"
@@ -46,3 +51,23 @@ class Session(Base):
 
     def __repr__(self):
         return f"<Session(user_id={self.user_id}, valid={self.is_valid})>"
+
+
+class PasswordResetToken(Base):
+    """Password reset token model for email-based account recovery."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(128), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    requested_ip = Column(String(45), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+
+    # Relationship to user
+    user = relationship("User", back_populates="password_reset_tokens")
+
+    def __repr__(self):
+        return f"<PasswordResetToken(user_id={self.user_id}, used={self.used_at is not None})>"

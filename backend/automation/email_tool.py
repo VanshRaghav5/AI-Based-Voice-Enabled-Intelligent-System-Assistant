@@ -43,7 +43,13 @@ class EmailSendTool(BaseTool):
                 logger.warning("SMTP configuration missing")
                 raise AutomationError(
                     "SMTP configuration missing (SMTP_HOST/SMTP_USER/SMTP_PASSWORD)",
-                    "Email is not configured. Please set up email credentials in the system settings.",
+                    "📧 Email is not configured yet.\n\n" +
+                    "To send emails, please set these environment variables:\n" +
+                    "• SMTP_HOST (e.g., smtp.gmail.com)\n" +
+                    "• SMTP_PORT (e.g., 587)\n" +
+                    "• SMTP_USER (your email address)\n" +
+                    "• SMTP_PASSWORD (your app password)\n\n" +
+                    "For Gmail, use an App Password: https://support.google.com/accounts/answer/185833",
                     {"config": "email settings"}
                 )
             
