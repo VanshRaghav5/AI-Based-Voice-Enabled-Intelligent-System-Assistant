@@ -7,19 +7,33 @@ import secrets
 import os
 import smtplib
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from email.message import EmailMessage
 from backend.database.models import User, Session as SessionModel, PasswordResetToken
+from backend.config.logger import logger
 
 
 # JWT Configuration
-SECRET_KEY = os.environ.get("OMNIASSIST_JWT_SECRET", "").strip()
-if not SECRET_KEY:
-    raise RuntimeError(
-        "Missing required environment variable: OMNIASSIST_JWT_SECRET. "
-        "Set it before starting the backend."
-    )
+@lru_cache(maxsize=1)
+def _get_jwt_secret_key() -> str:
+    """Read the JWT secret key from environment.
+
+    Note: this is intentionally *lazy* to avoid import-time crashes.
+    """
+    secret_key = os.environ.get("OMNIASSIST_JWT_SECRET", "").strip()
+    if not secret_key:
+        # Dev-friendly fallback: generate an ephemeral secret so the backend can start.
+        # Tokens will be invalid after restart; set OMNIASSIST_JWT_SECRET for persistence.
+        secret_key = secrets.token_urlsafe(64)
+        os.environ["OMNIASSIST_JWT_SECRET"] = secret_key
+        logger.warning(
+            "[Auth] OMNIASSIST_JWT_SECRET is not set; using an ephemeral generated secret. "
+            "Set OMNIASSIST_JWT_SECRET (or create a .env) to keep sessions valid across restarts."
+        )
+    return secret_key
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 PASSWORD_RESET_EXPIRE_MINUTES = 30
@@ -158,7 +172,7 @@ class AuthService:
         }
         
         # Generate token
-        token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+        token = jwt.encode(payload, _get_jwt_secret_key(), algorithm=ALGORITHM)
         
         # Store session in database
         session = SessionModel(
@@ -185,7 +199,7 @@ class AuthService:
         """
         try:
             # Decode token
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            payload = jwt.decode(token, _get_jwt_secret_key(), algorithms=[ALGORITHM])
             
             # Check if session exists and is valid
             session = self.db.query(SessionModel).filter(

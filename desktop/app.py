@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -23,6 +24,11 @@ def run() -> int:
     _configure_qt()
 
     app = QtWidgets.QApplication(sys.argv)
+
+    theme_path = Path(__file__).resolve().parent / "themes" / "dark.qss"
+    if theme_path.exists():
+        with open(theme_path, "r", encoding="utf-8") as f:
+            app.setStyleSheet(f.read())
 
     config = load_config()
     session = SessionStore()

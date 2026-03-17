@@ -15,13 +15,21 @@ echo ===============================================
 echo.
 
 REM Check Python venv
-if not exist "venv\Scripts\python.exe" (
+set "PYTHON_EXE="
+
+if exist "venv\Scripts\python.exe" (
+    set "PYTHON_EXE=venv\Scripts\python.exe"
+) else if exist "backend\venv\Scripts\python.exe" (
+    set "PYTHON_EXE=backend\venv\Scripts\python.exe"
+)
+
+if "%PYTHON_EXE%"=="" (
     echo [ERROR] Python venv not found!
     echo.
     echo Setup:
-    echo   python -m venv venv
-    echo   .\venv\Scripts\pip install -r backend/requirements.txt
-    echo   .\venv\Scripts\pip install -r desktop_1/requirements.txt
+    echo   python -m venv backend\venv
+    echo   .\backend\venv\Scripts\pip install -r backend\requirements.txt
+    echo   .\backend\venv\Scripts\pip install -r desktop_1\requirements.txt
     echo.
     pause
     exit /b 1
@@ -44,7 +52,7 @@ echo.
 echo [2/3] Starting backend API...
 echo Log: logs\backend.log
 echo.
-start "Backend API" .\venv\Scripts\python.exe backend\api_service.py
+start "Backend API" /B cmd /c ".\%PYTHON_EXE% backend\api_service.py > logs\backend.log 2>&1"
 
 REM Wait for backend
 echo Waiting for backend to start...
@@ -61,7 +69,7 @@ if errorlevel 1 (
 REM Start frontend
 echo.
 echo [3/3] Starting desktop UI...
-.\venv\Scripts\python.exe desktop_1\main.py
+.\%PYTHON_EXE% desktop_1\main.py
 
 echo.
 echo ===============================================
