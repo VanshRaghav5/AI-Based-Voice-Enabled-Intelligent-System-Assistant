@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import requests
+from urllib.parse import quote_plus
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from backend.config.logger import logger
@@ -148,16 +149,24 @@ class LLMClient:
             try:
                 # Try to parse as JSON
                 plan = json.loads(output)
-                self.last_source = "ollama"
-                return plan
+                if self._plan_has_steps(plan):
+                    self.last_source = "ollama"
+                    return plan
+                logger.warning("[LLMClient] Ollama returned plan without executable steps, using fallback")
+                self.last_source = "fallback"
+                return self._create_fallback_plan(prompt)
             except json.JSONDecodeError:
                 # Try to extract JSON from markdown code blocks
                 json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', output, re.DOTALL)
                 if json_match:
                     try:
                         plan = json.loads(json_match.group(1))
-                        self.last_source = "ollama"
-                        return plan
+                        if self._plan_has_steps(plan):
+                            self.last_source = "ollama"
+                            return plan
+                        logger.warning("[LLMClient] Extracted JSON plan has no steps, using fallback")
+                        self.last_source = "fallback"
+                        return self._create_fallback_plan(prompt)
                     except json.JSONDecodeError:
                         pass
                 
@@ -178,6 +187,56 @@ class LLMClient:
             self.last_source = "fallback"
             return self._create_fallback_plan(prompt)
 
+    def _plan_has_steps(self, plan) -> bool:
+        """Return True when a parsed plan contains executable steps."""
+        if not isinstance(plan, dict):
+            return False
+        steps = plan.get("steps")
+        if isinstance(steps, list) and len(steps) > 0:
+            return True
+        tool_calls = plan.get("tool_calls")
+        if isinstance(tool_calls, list) and len(tool_calls) > 0:
+            return True
+        return False
+
+    def _extract_user_command_from_prompt(self, prompt: str) -> str:
+        """Extract the real user command from planning/replan prompt wrappers."""
+        if not prompt:
+            return ""
+
+        # Prefer explicit USER COMMAND field when present.
+        command_matches = re.findall(r"USER COMMAND:\s*(.+)", prompt, flags=re.IGNORECASE)
+        if command_matches:
+            return command_matches[-1].strip()
+
+        # For replan prompt, the first non-empty line is generally the original command.
+        for line in str(prompt).splitlines():
+            candidate = line.strip()
+            if candidate and not candidate.lower().startswith("memory context"):
+                return candidate
+
+        return str(prompt).strip()
+
+    def _normalize_command_text(self, text: str) -> str:
+        """Normalize polite/free-form phrasing while preserving task keywords."""
+        normalized = str(text or "").lower()
+
+        # Remove common conversational wrappers that hurt strict keyword matching.
+        wrapper_patterns = [
+            r"\b(can you|could you|would you|will you|please|kindly)\b",
+            r"\bfor me\b",
+            r"\bhey\s+assistant\b",
+            r"\bassistant\b",
+            r"\bplz\b",
+        ]
+        for pattern in wrapper_patterns:
+            normalized = re.sub(pattern, " ", normalized)
+
+        # Normalize punctuation and whitespace.
+        normalized = re.sub(r"[^a-z0-9:\\/_\-.\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized
+
     def _create_fallback_plan(self, prompt: str):
         """Create a fallback plan based on comprehensive keyword matching.
         
@@ -187,13 +246,41 @@ class LLMClient:
         Returns:
             A basic execution plan as a dict with steps, or None if no match.
         """
-        logger.info(f"[LLMClient] Matching keywords in: {prompt}")
-        
-        prompt_lower = prompt.lower()
+        effective_prompt = self._extract_user_command_from_prompt(prompt)
+        logger.info(f"[LLMClient] Matching keywords in user command: {effective_prompt}")
+
+        prompt_lower = self._normalize_command_text(effective_prompt)
         steps = []
+
+        # Compound browser requests like:
+        # "search youtube on chrome and open Mr Beast on youtube"
+        # should execute as multi-step plans instead of a single generic action.
+        if any(x in prompt_lower for x in ["youtube", "google", "search"]) and any(
+            x in prompt_lower for x in ["search", "open", "play", "find"]
+        ):
+            youtube_query = self._extract_youtube_query(effective_prompt)
+            google_query = self._extract_search_query(effective_prompt)
+            wants_latest_video = self._wants_latest_video(prompt_lower)
+
+            if "chrome" in prompt_lower:
+                steps.append({"name": "app.open", "args": {"app_name": "chrome"}})
+
+            if "youtube" in prompt_lower:
+                query = youtube_query or google_query
+                if query:
+                    query = query.strip()
+                    if wants_latest_video:
+                        steps.append({"name": "browser.open_youtube_latest_video", "args": {"query": query}})
+                    else:
+                        search_url = self._build_youtube_search_url(query)
+                        steps.append({"name": "browser.open_url", "args": {"url": search_url}})
+                elif any(x in prompt_lower for x in ["open", "launch", "start", "go", "play", "run"]):
+                    steps.append({"name": "browser.open_youtube", "args": {}})
+            elif "search" in prompt_lower and google_query:
+                steps.append({"name": "browser.search_google", "args": {"query": google_query}})
         
         # WhatsApp commands
-        if any(x in prompt_lower for x in ["whatsapp", "whats app"]):
+        if not steps and any(x in prompt_lower for x in ["whatsapp", "whats app"]):
             # Prefer explicit send -> use registered send tool
             if "send" in prompt_lower:
                 target = self._extract_contact(prompt)
@@ -209,7 +296,7 @@ class LLMClient:
                     steps.append({"name": "whatsapp.open", "args": {}})
 
         # Email commands
-        elif any(x in prompt_lower for x in ["email", "e-mail", "send email", "mail"]):
+        elif not steps and any(x in prompt_lower for x in ["email", "e-mail", "send email", "mail"]):
             # Only trigger send when explicit 'send' is present; otherwise request agent
             if "send" in prompt_lower or "email" in prompt_lower and any(k in prompt_lower for k in ["to", "subject", "body", "message"]):
                 recipient = self._extract_email_recipient(prompt)
@@ -221,17 +308,23 @@ class LLMClient:
                 logger.warning("[LLMClient] Email detected but no send intent found")
         
         # Browser commands - YouTube  
-        elif any(x in prompt_lower for x in ["youtube", "you tube"]):
-            if any(x in prompt_lower for x in ["open", "launch", "start", "go", "play"]):
-                steps.append({"name": "browser.open_youtube", "args": {}})
+        elif not steps and any(x in prompt_lower for x in ["youtube", "you tube"]):
+            wants_latest_video = self._wants_latest_video(prompt_lower)
+            if any(x in prompt_lower for x in ["open", "launch", "start", "go", "play", "run"]):
+                query = self._extract_youtube_query(effective_prompt) or self._extract_search_query(effective_prompt)
+                if wants_latest_video and query:
+                    steps.append({"name": "browser.open_youtube_latest_video", "args": {"query": query.strip()}})
+                else:
+                    steps.append({"name": "browser.open_youtube", "args": {}})
             elif "search" in prompt_lower:
-                query = self._extract_search_query(prompt)
-                steps.append({"name": "browser.search_google", "args": {"query": f"youtube {query}"}})
+                query = self._extract_search_query(effective_prompt)
+                if query:
+                    steps.append({"name": "browser.open_url", "args": {"url": self._build_youtube_search_url(query)}})
         
         # Browser commands - Google search
-        elif any(x in prompt_lower for x in ["google", "search"]):
+        elif not steps and any(x in prompt_lower for x in ["google", "search"]):
             if "google" in prompt_lower or "search" in prompt_lower:
-                query = self._extract_search_query(prompt)
+                query = self._extract_search_query(effective_prompt)
                 if query:
                     steps.append({"name": "browser.search_google", "args": {"query": query}})
                 else:
@@ -239,19 +332,19 @@ class LLMClient:
                     steps.append({"name": "browser.open_url", "args": {"url": "https://www.google.com"}})
         
         # Browser commands - Open URL
-        elif any(x in prompt_lower for x in ["http://", "https://", ".com", ".org", ".net"]):
-            url = self._extract_url(prompt)
+        elif not steps and any(x in prompt_lower for x in ["http://", "https://", ".com", ".org", ".net"]):
+            url = self._extract_url(effective_prompt)
             if url:
                 steps.append({"name": "browser.open_url", "args": {"url": url}})
         
         # App launcher - specific apps
-        elif any(x in prompt_lower for x in ["open", "launch", "start"]):
-            app_name = self._extract_app_name(prompt)
+        elif not steps and any(x in prompt_lower for x in ["open", "launch", "start", "run"]):
+            app_name = self._extract_app_name(effective_prompt)
             if app_name and app_name not in ["file", "folder", "document"]:
                 steps.append({"name": "app.open", "args": {"app_name": app_name}})
             # Otherwise fall through to file open commands
             elif any(x in prompt_lower for x in ["file", "document"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if path:
                     steps.append({"name": "file.open", "args": {"path": path}})
                 else:
@@ -260,40 +353,40 @@ class LLMClient:
         # File open commands (moved to else-if below app launcher)
         
         # File create commands
-        elif any(x in prompt_lower for x in ["create", "make", "new"]):
+        elif not steps and any(x in prompt_lower for x in ["create", "make", "new"]):
             if any(x in prompt_lower for x in ["file"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if not path:
                     path = os.path.expanduser("~\\Desktop\\new_file.txt")
                 steps.append({"name": "file.create", "args": {"path": path}})
             elif any(x in prompt_lower for x in ["folder", "directory"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if not path:
                     path = os.path.expanduser("~\\Desktop\\new_folder")
                 steps.append({"name": "folder.create", "args": {"path": path}})
         
         # File delete commands
-        elif any(x in prompt_lower for x in ["delete", "remove", "erase"]):
+        elif not steps and any(x in prompt_lower for x in ["delete", "remove", "erase"]):
             if any(x in prompt_lower for x in ["file"]):
-                path = self._extract_path(prompt)
+                path = self._extract_path(effective_prompt)
                 if path:
                     steps.append({"name": "file.delete", "args": {"path": path}})
                 else:
                     # Try to create a default path if no path specified
                     steps.append({"name": "file.delete", "args": {"path": ""}})
             elif any(x in prompt_lower for x in ["folder", "directory"]):
-                path = self._extract_path(prompt) or self._extract_filename(prompt)
+                path = self._extract_path(effective_prompt) or self._extract_filename(effective_prompt)
                 if path:
                     steps.append({"name": "folder.delete", "args": {"path": path}})
         
         # File move/copy commands
-        elif any(x in prompt_lower for x in ["move", "copy", "rename"]):
-            source = self._extract_path(prompt)
+        elif not steps and any(x in prompt_lower for x in ["move", "copy", "rename"]):
+            source = self._extract_path(effective_prompt)
             if source:
                 steps.append({"name": "file.move", "args": {"source": source, "destination": ""}})
         
         # Brightness commands
-        elif any(x in prompt_lower for x in ["brightness", "bright", "dim", "screen"]):
+        elif not steps and any(x in prompt_lower for x in ["brightness", "bright", "dim", "screen"]):
             if any(x in prompt_lower for x in ["up", "increase", "brighter", "raise"]):
                 steps.append({"name": "display.brightness.increase", "args": {}})
             elif any(x in prompt_lower for x in ["down", "decrease", "lower", "dim", "darker"]):
@@ -301,25 +394,25 @@ class LLMClient:
             elif any(x in prompt_lower for x in ["set", "to"]):
                 # Extract brightness level from command like "set brightness to 50"
                 import re
-                match = re.search(r'(\d+)', prompt)
+                match = re.search(r'(\d+)', effective_prompt)
                 if match:
                     level = int(match.group(1))
                     steps.append({"name": "display.brightness.set", "args": {"level": level}})
         
         # Clipboard commands
-        elif any(x in prompt_lower for x in ["clipboard", "copy text", "paste"]):
+        elif not steps and any(x in prompt_lower for x in ["clipboard", "copy text", "paste"]):
             if any(x in prompt_lower for x in ["clear", "empty"]):
                 steps.append({"name": "clipboard.clear", "args": {}})
             elif any(x in prompt_lower for x in ["paste", "get"]):
                 steps.append({"name": "clipboard.paste", "args": {}})
             elif any(x in prompt_lower for x in ["copy"]):
                 # Try to extract text to copy
-                text = self._extract_clipboard_text(prompt)
+                text = self._extract_clipboard_text(effective_prompt)
                 if text:
                     steps.append({"name": "clipboard.copy", "args": {"text": text}})
         
         # Window management commands
-        elif any(x in prompt_lower for x in ["window", "minimize", "maximize", "show desktop"]):
+        elif not steps and any(x in prompt_lower for x in ["window", "minimize", "maximize", "show desktop"]):
             if any(x in prompt_lower for x in ["minimize all", "show desktop", "hide all"]):
                 steps.append({"name": "window.minimize_all", "args": {}})
             elif any(x in prompt_lower for x in ["maximize"]):
@@ -327,14 +420,14 @@ class LLMClient:
             elif any(x in prompt_lower for x in ["minimize"]) and not "all" in prompt_lower:
                 steps.append({"name": "window.minimize", "args": {}})
             elif any(x in prompt_lower for x in ["switch", "change"]):
-                title = self._extract_window_title(prompt)
+                title = self._extract_window_title(effective_prompt)
                 if title:
                     steps.append({"name": "window.switch", "args": {"window_title": title}})
             elif any(x in prompt_lower for x in ["task view", "all windows"]):
                 steps.append({"name": "window.task_view", "args": {}})
         
         # Volume commands - use correct tool names
-        elif any(x in prompt_lower for x in ["volume", "sound", "audio"]):
+        elif not steps and any(x in prompt_lower for x in ["volume", "sound", "audio"]):
             if any(x in prompt_lower for x in ["up", "increase", "louder", "raise", "higher"]):
                 steps.append({"name": "system.volume.up", "args": {}})
             elif any(x in prompt_lower for x in ["down", "decrease", "quieter", "lower", "softer"]):
@@ -343,66 +436,72 @@ class LLMClient:
                 steps.append({"name": "system.volume.mute", "args": {}})
         
         # System lock - use correct tool name
-        elif any(x in prompt_lower for x in ["lock"]) and not "unlock" in prompt_lower:
+        elif not steps and any(x in prompt_lower for x in ["lock"]) and not "unlock" in prompt_lower:
             steps.append({"name": "system.lock", "args": {}})
         
         # System shutdown - use correct tool name
-        elif any(x in prompt_lower for x in ["shutdown", "shut down", "power off", "turn off"]):
+        elif not steps and any(x in prompt_lower for x in ["shutdown", "shut down", "power off", "turn off"]):
             steps.append({"name": "system.shutdown", "args": {}})
         
         # System restart - use correct tool name
-        elif any(x in prompt_lower for x in ["restart", "reboot"]):
+        elif not steps and any(x in prompt_lower for x in ["restart", "reboot"]):
             steps.append({"name": "system.restart", "args": {}})
         
         # System sleep - use correct tool name
-        elif any(x in prompt_lower for x in ["sleep"]) and any(x in prompt_lower for x in ["system", "computer", "put"]):
+        elif not steps and any(x in prompt_lower for x in ["sleep"]) and any(x in prompt_lower for x in ["system", "computer", "put"]):
             steps.append({"name": "system.sleep", "args": {}})
         
         # System hibernate - use correct tool name
-        elif any(x in prompt_lower for x in ["hibernate"]):
+        elif not steps and any(x in prompt_lower for x in ["hibernate"]):
             steps.append({"name": "system.hibernate", "args": {}})
         
         # Screenshot
-        elif any(x in prompt_lower for x in ["screenshot", "screen shot", "capture screen", "take picture"]):
+        elif not steps and any(x in prompt_lower for x in ["screenshot", "screen shot", "capture screen", "take picture"]):
             if any(x in prompt_lower for x in ["region", "area", "selection"]):
                 steps.append({"name": "system.screenshot.region", "args": {}})
             else:
                 steps.append({"name": "system.screenshot", "args": {}})
         
         # System shortcuts - task manager
-        elif any(x in prompt_lower for x in ["task manager", "taskmgr", "ctrl alt delete"]):
+        elif not steps and any(x in prompt_lower for x in ["task manager", "taskmgr", "ctrl alt delete"]):
             steps.append({"name": "system.task_manager", "args": {}})
         
         # System shortcuts - file explorer
-        elif any(x in prompt_lower for x in ["file explorer", "windows explorer", "this pc"]) and "open" in prompt_lower:
+        elif not steps and any(x in prompt_lower for x in ["file explorer", "windows explorer", "this pc"]) and "open" in prompt_lower:
             steps.append({"name": "system.file_explorer", "args": {}})
         
         # System shortcuts - settings
-        elif any(x in prompt_lower for x in ["windows settings", "pc settings"]) and "open" in prompt_lower:
+        elif not steps and any(x in prompt_lower for x in ["windows settings", "pc settings"]) and "open" in prompt_lower:
             steps.append({"name": "system.settings", "args": {}})
         
         # System shortcuts - run dialog
-        elif any(x in prompt_lower for x in ["run dialog", "run command", "win+r", "windows+r"]) and "open" in prompt_lower:
+        elif not steps and any(x in prompt_lower for x in ["run dialog", "run command", "win+r", "windows+r"]) and "open" in prompt_lower:
             steps.append({"name": "system.run_dialog", "args": {}})
         
         # System shortcuts - empty recycle bin
-        elif any(x in prompt_lower for x in ["empty recycle", "empty trash", "clear recycle"]):
+        elif not steps and any(x in prompt_lower for x in ["empty recycle", "empty trash", "clear recycle"]):
             steps.append({"name": "system.recycle_bin.empty", "args": {}})
         
         # Turn off monitor (prevent shutdown conflict)
-        elif any(x in prompt_lower for x in ["monitor off", "screen off", "display off", "turn off monitor", "turn off screen"]):
+        elif not steps and any(x in prompt_lower for x in ["monitor off", "screen off", "display off", "turn off monitor", "turn off screen"]):
             steps.append({"name": "display.monitor.off", "args": {}})
         
         # File search - must come after other commands to avoid conflicts
-        elif any(x in prompt_lower for x in ["search", "find", "locate"]):
+        elif not steps and any(x in prompt_lower for x in ["search", "find", "locate"]):
             if any(x in prompt_lower for x in ["file", "files", "for file"]):
-                term = self._extract_filename(prompt)
+                term = self._extract_filename(effective_prompt)
                 if term:
                     steps.append({"name": "file.search", "args": {"filename": term}})
         
         if not steps:
-            logger.warning(f"[LLMClient] No keyword match for: {prompt}")
+            logger.warning(f"[LLMClient] No keyword match for normalized input: {prompt_lower}")
             return None
+
+        # Backward-compatible output shape used by some tests and parser paths.
+        for step in steps:
+            if isinstance(step, dict):
+                if "name" in step and "tool" not in step:
+                    step["tool"] = step["name"]
         
         logger.info(f"[LLMClient] Generated {len(steps)} fallback steps: {steps}")
         return {"steps": steps}
@@ -566,6 +665,45 @@ class LLMClient:
             return quoted.group(1)
         
         return ""
+
+    def _extract_youtube_query(self, text: str) -> str:
+        """Extract target query for YouTube-focused complex commands."""
+        if not text:
+            return ""
+
+        # Prefer quoted query first.
+        quoted = re.search(r'"([^"]+)"', text)
+        if quoted:
+            return quoted.group(1).strip()
+
+        patterns = [
+            r'\band\s+(?:open|play|search(?:\s+for)?)\s+(.+?)\s+on\s+youtube\b',
+            r'\b(?:open|play|search(?:\s+for)?)\s+(.+?)\s+on\s+youtube\b',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip(" .,!?")
+
+        query = self._extract_search_query(text)
+        if query:
+            query = re.sub(r'\bon\s+chrome\b', '', query, flags=re.IGNORECASE)
+            query = re.sub(r'\bon\s+youtube\b', '', query, flags=re.IGNORECASE)
+            query = re.sub(r'\band\s+open\b.*$', '', query, flags=re.IGNORECASE)
+            query = query.strip(" .,!?")
+        return query
+
+    def _build_youtube_search_url(self, query: str) -> str:
+        """Build a stable YouTube search URL for a query."""
+        cleaned = (query or "").strip()
+        if not cleaned:
+            return "https://www.youtube.com"
+        return f"https://www.youtube.com/results?search_query={quote_plus(cleaned)}"
+
+    def _wants_latest_video(self, normalized_text: str) -> bool:
+        """Return True when user explicitly asks for latest/newest/recent video."""
+        lowered = str(normalized_text or "").lower()
+        return any(term in lowered for term in ["latest", "newest", "recent", "last video", "latest video", "new video"])
 
     def _extract_url(self, text: str) -> str:
         """Extract URL from text.
