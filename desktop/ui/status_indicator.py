@@ -1,47 +1,71 @@
 from __future__ import annotations
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 
 class StatusIndicator(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self._api = QtWidgets.QLabel("API: ?")
-        self._socket = QtWidgets.QLabel("Socket: ?")
-        self._state = QtWidgets.QLabel("State: IDLE")
-        self._llm = QtWidgets.QLabel("LLM: ?")
-        self._listening = QtWidgets.QLabel("Listening: no")
-        self._confirm = QtWidgets.QLabel("Confirm: no")
+        self._status_badge = QtWidgets.QLabel("● Ready")
+        self._status_badge.setStyleSheet(
+            "color: #10b981; font-size: 13px; font-weight: 600; "
+            "padding: 6px 12px; background: #172A22; border: 1px solid #1F6B4F; border-radius: 16px;"
+        )
 
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
-        layout.addWidget(self._api)
-        layout.addWidget(self._socket)
-        layout.addWidget(self._state)
-        layout.addWidget(self._llm)
+        layout.setSpacing(0)
+
+        layout.addWidget(self._status_badge)
         layout.addStretch(1)
-        layout.addWidget(self._listening)
-        layout.addWidget(self._confirm)
+
+        self._api_ok = False
+        self._socket_ok = False
+        self._listening = False
+        self._llm_source = None
+
+    def _update_backend_status(self):
+        ok = self._api_ok and self._socket_ok
+        if not ok:
+            self._status_badge.setText("● Offline")
+            self._status_badge.setStyleSheet(
+                "color: #ef4444; font-size: 13px; font-weight: 600; "
+                "padding: 6px 12px; background: #2A1717; border: 1px solid #7F1D1D; border-radius: 16px;"
+            )
+            return
+
+        if self._listening:
+            self._status_badge.setText("● Listening")
+            self._status_badge.setStyleSheet(
+                "color: #ef4444; font-size: 13px; font-weight: 600; "
+                "padding: 6px 12px; background: #2A1717; border: 1px solid #7F1D1D; border-radius: 16px;"
+            )
+        else:
+            self._status_badge.setText("● Ready")
+            self._status_badge.setStyleSheet(
+                "color: #10b981; font-size: 13px; font-weight: 600; "
+                "padding: 6px 12px; background: #172A22; border: 1px solid #1F6B4F; border-radius: 16px;"
+            )
 
     def set_api_ok(self, ok: bool, status: str | None = None) -> None:
-        self._api.setText(f"API: {'✓' if ok else '✗'}{'' if not status else ' ' + str(status)}")
+        self._api_ok = ok
+        self._update_backend_status()
 
     def set_socket_connected(self, connected: bool) -> None:
-        self._socket.setText(f"Socket: {'✓' if connected else '✗'}")
-
-    def set_state(self, state: str) -> None:
-        self._state.setText(f"State: {state}")
-
-    def set_llm_source(self, source: str | None) -> None:
-        if not source:
-            self._llm.setText("LLM: ?")
-            return
-        self._llm.setText(f"LLM: {source}")
+        self._socket_ok = connected
+        self._update_backend_status()
 
     def set_listening(self, listening: bool) -> None:
-        self._listening.setText(f"Listening: {'yes' if listening else 'no'}")
+        self._listening = listening
+        self._update_backend_status()
+
+    def set_llm_source(self, source: str | None) -> None:
+        self._llm_source = source
+
+    def set_state(self, state: str) -> None:
+        pass  # state is shown via orb and central layout now
 
     def set_confirmation_pending(self, pending: bool) -> None:
-        self._confirm.setText(f"Confirm: {'yes' if pending else 'no'}")
+        pass  # shown via dialogs
+

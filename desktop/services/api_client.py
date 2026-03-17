@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 import requests
+from requests import exceptions as req_exc
 
 from desktop.services.session_store import SessionStore
 
@@ -40,8 +41,43 @@ class ApiClient:
                     self.session.save(token, user)
                 return True, payload.get("message", "Login successful"), token, user
             return False, payload.get("message", "Login failed"), None, None
+        except req_exc.ConnectionError as exc:
+            return False, f"Backend not reachable at {self.base_url} (connection refused). Start the backend and retry. Details: {exc}", None, None
         except Exception as exc:
             return False, f"Connection error: {exc}", None, None
+
+    def register(self, username: str, email: str, password: str) -> ApiResult:
+        try:
+            resp = requests.post(
+                self._url("/api/auth/register"),
+                json={"username": username, "email": email, "password": password},
+                timeout=10,
+            )
+            payload = resp.json() if resp.content else {}
+            ok = resp.status_code in (200, 201) and payload.get("status") == "success"
+            
+            message = str(payload.get("message", ""))
+            if not ok and 'errors' in payload:
+                errors = payload['errors']
+                if isinstance(errors, dict):
+                    error_msgs: list[str] = []
+                    for field, msgs in errors.items():
+                        if isinstance(msgs, list):
+                            error_msgs.extend([str(m) for m in msgs])
+                        else:
+                            error_msgs.append(str(msgs))
+                    if error_msgs:
+                        message = message + ": " + "; ".join(error_msgs)
+            
+            return ApiResult(ok=ok, message=message, data=payload or None)
+        except req_exc.ConnectionError as exc:
+            return ApiResult(
+                ok=False,
+                message=f"Backend not reachable at {self.base_url} (connection refused). Start the backend and retry. Details: {exc}",
+                data=None,
+            )
+        except Exception as exc:
+            return ApiResult(ok=False, message=f"Connection error: {exc}", data=None)
 
     def verify_token(self) -> Tuple[bool, Optional[Dict[str, Any]]]:
         try:
@@ -88,6 +124,15 @@ class ApiClient:
     def get_status(self) -> Tuple[bool, Dict[str, Any]]:
         try:
             resp = requests.get(self._url("/api/status"), headers=self.session.auth_headers(), timeout=10)
+            if resp.status_code == 200:
+                return True, resp.json()
+            return False, {}
+        except Exception:
+            return False, {}
+
+    def get_profile(self) -> Tuple[bool, Dict[str, Any]]:
+        try:
+            resp = requests.get(self._url("/api/profile"), headers=self.session.auth_headers(), timeout=10)
             if resp.status_code == 200:
                 return True, resp.json()
             return False, {}
