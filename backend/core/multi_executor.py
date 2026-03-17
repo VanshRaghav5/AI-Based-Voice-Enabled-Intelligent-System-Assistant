@@ -1,4 +1,5 @@
 from backend.config.logger import logger
+from backend.core import runtime_events
 
 
 class MultiExecutor:
@@ -36,6 +37,29 @@ class MultiExecutor:
             or {}
         )
         return tool_name, tool_args
+
+    def _format_step_desc(self, tool_name: str, tool_args: dict) -> str:
+        if not tool_name:
+            return ""
+
+        if not isinstance(tool_args, dict) or not tool_args:
+            return tool_name
+
+        try:
+            preview = ", ".join(f"{k}={v}" for k, v in list(tool_args.items())[:2])
+            return f"{tool_name} ({preview})" if preview else tool_name
+        except Exception:
+            return tool_name
+
+    def _emit_step(self, step_num: int, description: str, status: str) -> None:
+        runtime_events.emit(
+            "execution_step",
+            {
+                "step": step_num,
+                "description": description,
+                "status": status,
+            },
+        )
 
     def execute(self, plan):
         """Execute a plan (either object with .steps or dict with 'steps' key).
@@ -76,6 +100,10 @@ class MultiExecutor:
                 logger.warning("[MultiExecutor] Step has no name")
                 continue
 
+            step_num = step_index + 1
+            step_desc = self._format_step_desc(tool_name, tool_args)
+            self._emit_step(step_num, step_desc, "running")
+
             # Check if this is a critical tool requiring confirmation
             if tool_name in self.CRITICAL_TOOLS:
                 logger.warning(f"[MultiExecutor] CRITICAL TOOL: {tool_name} requires confirmation")
@@ -112,6 +140,9 @@ class MultiExecutor:
                     "data": {}
                 })
                 logger.info(f"[MultiExecutor] Confirmation required: {confirm_msg}")
+
+                # Keep execution_step status compatible with existing UIs.
+                # (V1 shows 🔹 for non-success; V2 uses confirmation_required event for blocking UI.)
                 break  # Stop and wait for confirmation
             
             tool = self.registry.get(tool_name)
@@ -127,6 +158,11 @@ class MultiExecutor:
             try:
                 result = tool.execute(**tool_args)
                 results.append(result)
+
+                if result.get("status") == "success":
+                    self._emit_step(step_num, step_desc, "success")
+                else:
+                    self._emit_step(step_num, step_desc, "failed")
                 
                 # Stop execution on failure
                 if result.get("status") != "success":
@@ -135,6 +171,7 @@ class MultiExecutor:
                     
             except Exception as e:
                 logger.error(f"[MultiExecutor] Error executing {tool_name}: {e}")
+                self._emit_step(step_num, step_desc, "failed")
                 results.append({
                     "status": "error",
                     "message": str(e),
@@ -180,8 +217,13 @@ class MultiExecutor:
                 })
                 break
 
+            step_num = idx + 1
+            step_desc = self._format_step_desc(tool_name, tool_args)
+            self._emit_step(step_num, step_desc, "running")
+
             # If a later step is critical, request a new confirmation.
             if idx > step_index and tool_name in self.CRITICAL_TOOLS:
+                # Leave the step in a non-terminal state; UI will handle confirmation_required.
                 results.append({
                     "status": "confirmation_required",
                     "message": f"Confirm critical operation: {tool_name}",
@@ -207,11 +249,17 @@ class MultiExecutor:
                 results.append(result)
                 logger.info(f"[MultiExecutor] Executed step #{idx + 1}: {result}")
 
+                if result.get("status") == "success":
+                    self._emit_step(step_num, step_desc, "success")
+                else:
+                    self._emit_step(step_num, step_desc, "failed")
+
                 if result.get("status") != "success":
                     logger.warning("[MultiExecutor] Stopping continuation due to failure")
                     break
             except Exception as e:
                 logger.error(f"[MultiExecutor] Error executing {tool_name}: {e}")
+                self._emit_step(step_num, step_desc, "failed")
                 results.append({
                     "status": "error",
                     "message": str(e),

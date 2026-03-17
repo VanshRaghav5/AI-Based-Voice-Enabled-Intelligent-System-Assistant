@@ -1,6 +1,0 @@
- customtkinter 
- requests 
- python-socketio
- websocket-client
- pyaudio
- numpy
