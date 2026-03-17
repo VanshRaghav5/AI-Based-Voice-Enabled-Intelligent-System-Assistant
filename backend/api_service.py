@@ -8,27 +8,57 @@ to allow the desktop application to interact with the backend functionality.
 import sys
 import os
 from pathlib import Path
+import secrets
+
+
+def _load_dotenv(dotenv_path: Path) -> None:
+    """Load KEY=VALUE pairs from a .env file into the process environment.
+
+    - Ignores blank lines and comments.
+    - Does not override already-set environment variables.
+    - Supports quoted values (single or double quotes).
+    """
+    try:
+        if not dotenv_path.exists() or not dotenv_path.is_file():
+            return
+
+        for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                continue
+            if key in os.environ and os.environ[key].strip():
+                continue
+
+            if (len(value) >= 2) and ((value[0] == value[-1]) and value[0] in ("\"", "'")):
+                value = value[1:-1]
+
+            os.environ[key] = value
+    except Exception:
+        # Never fail startup due to .env parsing issues.
+        return
 
 # Add project root to Python path to support running from any directory
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from backend.config.secrets import ensure_runtime_secrets
-
-# Auto-provision required secrets for first-run local desktop UX.
-ensure_runtime_secrets()
+# Load local environment variables early (before importing modules that may read env vars).
+_load_dotenv(project_root / ".env")
 
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from backend.core.assistant_controller import AssistantController
-from backend.core.controller_manager import ControllerManager
-from backend.core.response_formatter import ResponseFormatter
-from backend.voice_engine.audio_pipeline import listen_for_gui_adaptive, speak
-from backend.voice_engine.wake_word_detector import WakeWordDetector
+from backend.core import runtime_events
 from backend.config.logger import logger
 from backend.core.persona import persona
 from backend.config.assistant_config import assistant_config
@@ -39,19 +69,21 @@ from backend.middleware.validation import (
     RegisterSchema,
     CommandSchema,
     SettingsSchema,
-    ScheduleTaskSchema,
     PasswordResetRequestSchema,
     PasswordResetConfirmSchema,
 )
 from backend.database import SessionLocal, init_db
 from backend.database.models import User
-from backend.scheduling.natural_language import parse_natural_schedule_command
-from backend.scheduling.task_scheduler import TaskSchedulerService
 import threading
 from typing import Optional, Dict, Any
 from functools import lru_cache
 from marshmallow import ValidationError
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.core.assistant_controller import AssistantController
+    from backend.voice_engine.wake_word_detector import WakeWordDetector
 
 
 def _get_required_env(name: str) -> str:
@@ -65,6 +97,24 @@ def _get_required_env(name: str) -> str:
     return value
 
 
+def _get_or_generate_secret(name: str) -> str:
+    """Return env var value or generate a dev-friendly ephemeral secret.
+
+    This prevents the backend from silently exiting when started in the background.
+    """
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+
+    generated = secrets.token_urlsafe(64)
+    os.environ[name] = generated
+    logger.warning(
+        f"[Config] {name} is not set; using an ephemeral generated secret. "
+        "Create a .env (see .env.example) to keep it stable across restarts."
+    )
+    return generated
+
+
 def _get_allowed_origins() -> list:
     """Parse trusted CORS origins from environment."""
     raw = os.environ.get(
@@ -75,7 +125,7 @@ def _get_allowed_origins() -> list:
     return origins or ["http://127.0.0.1:5000", "http://localhost:5000"]
 
 
-APP_SECRET_KEY = _get_required_env("OMNIASSIST_FLASK_SECRET_KEY")
+APP_SECRET_KEY = _get_or_generate_secret("OMNIASSIST_FLASK_SECRET_KEY")
 ALLOWED_ORIGINS = _get_allowed_origins()
 
 app = Flask(__name__)
@@ -90,130 +140,33 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"],
     storage_uri="memory://"
 )
+runtime_events.set_emitter(lambda event, payload: socketio.emit(event, payload))
 
 # Global state
-controller_manager = ControllerManager(controller_factory=AssistantController)
-task_scheduler = TaskSchedulerService(controller_manager=controller_manager, socketio=socketio, session_factory=SessionLocal)
-response_formatter = ResponseFormatter()
+controller: Optional["AssistantController"] = None
 is_listening = False
-listening_user_id: Optional[int] = None
+pending_confirmation: Optional[Dict[str, Any]] = None
 listening_thread: Optional[threading.Thread] = None
-wake_word_detector: Optional[WakeWordDetector] = None
+wake_word_detector: Optional["WakeWordDetector"] = None
+
+
+def get_controller() -> "AssistantController":
+    """Lazy init of the assistant controller.
+
+    This avoids doing heavy LLM/tool initialization during API startup, which makes
+    auth + health endpoints responsive immediately.
+    """
+    global controller
+    if controller is None:
+        logger.info("[API] Initializing AssistantController (lazy)...")
+        from backend.core.assistant_controller import AssistantController
+        controller = AssistantController()
+    return controller
 
 # Cache for recent commands to avoid duplicate processing
 _command_cache = {}
 _cache_timeout = 1.0  # 1 second cache for duplicate commands
 _socket_users: Dict[str, Dict[str, Any]] = {}
-
-
-def _get_user_scope(user_id: Any) -> str:
-    """Create a stable controller scope key for a user."""
-    return f"user:{user_id}"
-
-
-def _get_voice_scope() -> str:
-    """Return the dedicated scope used by the voice loop."""
-    return "voice"
-
-
-def _get_controller_for_http_request() -> AssistantController:
-    """Return the controller scoped to the authenticated HTTP user."""
-    return controller_manager.get_controller(_get_user_scope(request.current_user.id))
-
-
-def _get_controller_for_socket() -> AssistantController:
-    """Return the controller scoped to the authenticated socket user."""
-    socket_user = _socket_users.get(request.sid, {})
-    return controller_manager.get_controller(_get_user_scope(socket_user.get("id", request.sid)))
-
-
-def _get_voice_controller() -> AssistantController:
-    """Return the controller used for voice-driven interactions."""
-    return controller_manager.get_controller(_get_voice_scope())
-
-
-def _format_task_preview(task: dict) -> str:
-    task_id = task.get("id")
-    name = task.get("name") or "Scheduled task"
-    next_run = task.get("next_run_at") or "not scheduled"
-    return f"#{task_id} {name} (next: {next_run})"
-
-
-def _style_result(result: dict, status: str) -> dict:
-    styled = response_formatter.format(result)
-    styled["message"] = persona.stylize_response(styled.get("message", ""), status=status)
-    return styled
-
-
-def _handle_natural_schedule_command(command: str, user_id: Optional[int], language: Optional[str] = None):
-    """Handle user-friendly schedule commands before LLM planning."""
-    intent = parse_natural_schedule_command(command)
-    if not intent:
-        return None
-
-    if not user_id:
-        return _style_result({
-            "status": "error",
-            "message": "Scheduling requires an authenticated user session.",
-            "data": {},
-        }, status="error")
-
-    action = intent.get("action")
-
-    if action == "invalid":
-        return _style_result({
-            "status": "error",
-            "message": intent.get("message", "Invalid schedule request."),
-            "data": {},
-        }, status="error")
-
-    if action == "list":
-        tasks = task_scheduler.list_tasks_for_user(user_id)
-        if not tasks:
-            message = "You do not have any scheduled tasks yet."
-        else:
-            preview = "; ".join(_format_task_preview(task) for task in tasks[:5])
-            message = f"Your scheduled tasks: {preview}"
-
-        return _style_result({
-            "status": "success",
-            "message": message,
-            "data": {"tasks": tasks},
-        }, status="success")
-
-    if action == "delete":
-        task_id = intent.get("task_id")
-        deleted = task_scheduler.delete_task(user_id, task_id)
-        if not deleted:
-            return _style_result({
-                "status": "error",
-                "message": f"Could not find schedule {task_id}.",
-                "data": {"task_id": task_id},
-            }, status="error")
-
-        return _style_result({
-            "status": "success",
-            "message": f"Schedule {task_id} cancelled.",
-            "data": {"task_id": task_id},
-        }, status="success")
-
-    if action == "create":
-        task = task_scheduler.create_task(
-            user_id=user_id,
-            name=intent.get("name") or intent.get("command"),
-            command=intent["command"],
-            language=language,
-            trigger_type=intent["trigger_type"],
-            interval_seconds=intent.get("interval_seconds"),
-            cron_expression=intent.get("cron_expression"),
-        )
-        return _style_result({
-            "status": "success",
-            "message": f"Scheduled '{intent['command']}' {intent.get('description', 'successfully')} as task #{task['id']}.",
-            "data": {"task": task},
-        }, status="success")
-
-    return None
 
 
 @app.after_request
@@ -307,8 +260,8 @@ def get_status():
     return jsonify({
         'status': 'online',
         'listening': is_listening,
-        'pending_confirmation': controller_manager.has_any_pending_confirmation(),
-        'confirmation_details': controller_manager.get_pending_confirmation(_get_voice_scope())
+        'pending_confirmation': pending_confirmation is not None,
+        'confirmation_details': pending_confirmation if pending_confirmation else None
     })
 
 
@@ -363,23 +316,16 @@ def process_command():
                 'data': {}
             })
         
-        schedule_result = _handle_natural_schedule_command(command, request.current_user.id, language=language)
-        if schedule_result:
-            socketio.emit('command_result', schedule_result)
-            return jsonify(schedule_result)
-
         # Don't duplicate LLM calls - let controller handle plan generation
         # Process the command (this handles plan generation internally)
-        controller = _get_controller_for_http_request()
-        result = controller.process(command, language=language)
+        result = get_controller().process(command, language=language)
 
-        # Emit the actual executed plan steps from controller state
-        executed_plan = controller.get_last_plan_data()
-        if executed_plan and isinstance(executed_plan, dict):
-            emit_execution_steps(executed_plan)
+        # Step progress is emitted in real-time by MultiExecutor via runtime_events.
         
         # Check if confirmation is required
         if result.get('status') == 'confirmation_required':
+            global pending_confirmation
+            pending_confirmation = result
             # Notify WebSocket clients
             socketio.emit('confirmation_required', result)
         else:
@@ -405,13 +351,12 @@ def start_listening():
     Returns:
         JSON confirmation of listening state
     """
-    global is_listening, listening_thread, listening_user_id
+    global is_listening, listening_thread
     
     try:
         if is_listening:
             return jsonify({'message': 'Already listening', 'listening': True}), 200
         
-        listening_user_id = request.current_user.id
         is_listening = True
         listening_thread = threading.Thread(target=voice_loop, daemon=True)
         listening_thread.start()
@@ -435,14 +380,13 @@ def stop_listening():
     Returns:
         JSON confirmation of listening state
     """
-    global is_listening, listening_user_id
+    global is_listening
     
     try:
         if not is_listening:
             return jsonify({'message': 'Not currently listening', 'listening': False}), 200
         
         is_listening = False
-        listening_user_id = None
         
         logger.info("[API] Voice listening stopped")
         socketio.emit('listening_status', {'listening': False})
@@ -467,6 +411,7 @@ def start_wake_word():
     try:
         if wake_word_detector is None:
             # Initialize wake word detector with callback
+            from backend.voice_engine.wake_word_detector import WakeWordDetector
             wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
         
         if wake_word_detector.is_active:
@@ -542,16 +487,18 @@ def confirm_action():
     Returns:
         JSON with confirmation result
     """
+    global pending_confirmation
+    
     data = request.json
     approved = data.get('approved', False)
-
-    controller = _get_controller_for_http_request()
-    if not controller.has_pending_confirmation():
+    
+    if pending_confirmation is None:
         return jsonify({'error': 'No pending confirmation'}), 400
     
     try:
         logger.info(f"[API] Action {'approved' if approved else 'rejected'}")
-        result = controller.confirm_action(approved)
+        result = get_controller().confirm_action(approved)
+        pending_confirmation = None
         
         # Notify clients
         socketio.emit('confirmation_result', result)
@@ -559,6 +506,7 @@ def confirm_action():
         return jsonify(result)
     except Exception as e:
         logger.error(f"[API] Error confirming action: {e}", exc_info=True)
+        pending_confirmation = None
         return jsonify({
             'status': 'error',
             'message': f'Error confirming action: {str(e)}'
@@ -587,6 +535,7 @@ def speak_text():
     
     try:
         logger.info(f"[API] Speaking: {text}")
+        from backend.voice_engine.audio_pipeline import speak
         speak(text)
         
         socketio.emit('speech_complete', {'text': text})
@@ -689,6 +638,34 @@ def update_settings():
             except Exception as e:
                 errors.append(f"memory: {str(e)}")
                 logger.error(f"[Settings] Error updating memory: {e}", exc_info=True)
+
+        # Update timezone
+        if 'timezone' in data:
+            try:
+                timezone = str(data['timezone']).strip() or os.environ.get('OMNIASSIST_TIMEZONE', 'IST')
+                success = assistant_config.set('assistant.timezone', timezone)
+                if success:
+                    updated.append(f"timezone={timezone}")
+                    logger.info(f"[Settings] Timezone updated to: {timezone}")
+                else:
+                    errors.append("timezone: failed to save to config")
+            except Exception as e:
+                errors.append(f"timezone: {str(e)}")
+                logger.error(f"[Settings] Error updating timezone: {e}", exc_info=True)
+
+        # Update primary email used by assistant workflows
+        if 'primary_email' in data:
+            try:
+                primary_email = str(data['primary_email']).strip()
+                success = assistant_config.set('assistant.primary_email', primary_email)
+                if success:
+                    updated.append(f"primary_email={primary_email}")
+                    logger.info(f"[Settings] Primary email updated to: {primary_email}")
+                else:
+                    errors.append("primary_email: failed to save to config")
+            except Exception as e:
+                errors.append(f"primary_email: {str(e)}")
+                logger.error(f"[Settings] Error updating primary email: {e}", exc_info=True)
         
         # Note: assistant_config.set() already saves to disk, no need to call save()
         
@@ -700,7 +677,9 @@ def update_settings():
             'settings': {
                 'persona': persona.mode,
                 'language': assistant_config.get('stt.language', 'en'),
-                'memory_enabled': assistant_config.get('memory.enabled', True)
+                'memory_enabled': assistant_config.get('memory.enabled', True),
+                'timezone': assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST')),
+                'primary_email': assistant_config.get('assistant.primary_email', ''),
             }
         }
         
@@ -729,79 +708,63 @@ def get_settings():
     return jsonify({
         'persona': persona.mode,
         'language': assistant_config.get('stt.language', 'en'),
-        'memory_enabled': assistant_config.get('memory.enabled', True)
+        'memory_enabled': assistant_config.get('memory.enabled', True),
+        'timezone': assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST')),
+        'primary_email': assistant_config.get('assistant.primary_email', getattr(request.current_user, 'email', '')),
     })
 
 
-@app.route('/api/schedules', methods=['GET'])
+@app.route('/api/profile', methods=['GET'])
 @login_required
-def list_scheduled_tasks():
-    """List scheduled tasks for the authenticated user."""
-    tasks = task_scheduler.list_tasks_for_user(request.current_user.id)
-    return jsonify({
-        'status': 'success',
-        'tasks': tasks,
-    })
+def get_profile():
+    """Return user-facing personalization profile for desktop clients."""
+    user = request.current_user
 
+    timezone = assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST'))
+    primary_email = assistant_config.get('assistant.primary_email', user.email)
 
-@app.route('/api/schedules', methods=['POST'])
-@login_required
-@limiter.limit("20 per minute")
-def create_scheduled_task():
-    """Create a one-time or recurring scheduled task for the authenticated user."""
-    try:
-        schema = ScheduleTaskSchema()
-        data = schema.load(request.json or {})
+    smtp_connected = bool(
+        os.environ.get('SMTP_HOST') and os.environ.get('SMTP_USER') and os.environ.get('SMTP_PASSWORD')
+    )
 
-        task = task_scheduler.create_task(
-            user_id=request.current_user.id,
-            name=data.get('name') or data['command'],
-            command=data['command'],
-            language=data.get('language'),
-            trigger_type=data['trigger_type'],
-            run_at=data.get('run_at'),
-            interval_seconds=data.get('interval_seconds'),
-            cron_expression=data.get('cron_expression'),
-        )
-
-        return jsonify({
-            'status': 'success',
-            'message': 'Scheduled task created successfully',
-            'task': task,
-        }), 201
-    except ValidationError as err:
-        return jsonify({
-            'status': 'error',
-            'message': 'Validation failed',
-            'errors': err.messages,
-        }), 400
-    except ValueError as err:
-        return jsonify({
-            'status': 'error',
-            'message': str(err),
-        }), 400
-    except Exception as e:
-        logger.error(f"[Scheduler] Error creating task: {e}", exc_info=True)
-        return jsonify({
-            'status': 'error',
-            'message': f'Failed to create scheduled task: {str(e)}'
-        }), 500
-
-
-@app.route('/api/schedules/<int:task_id>', methods=['DELETE'])
-@login_required
-def delete_scheduled_task(task_id: int):
-    """Delete a scheduled task owned by the authenticated user."""
-    deleted = task_scheduler.delete_task(request.current_user.id, task_id)
-    if not deleted:
-        return jsonify({
-            'status': 'error',
-            'message': 'Scheduled task not found',
-        }), 404
+    connected_apps = [
+        {
+            'name': 'Email',
+            'status': 'connected' if smtp_connected else 'not_connected',
+            'details': os.environ.get('SMTP_USER', ''),
+        },
+        {
+            'name': 'Wake Word',
+            'status': 'enabled' if bool(assistant_config.get('wake_word.enabled', False)) else 'disabled',
+            'details': ', '.join(assistant_config.get('wake_word.words', ['otto'])),
+        },
+        {
+            'name': 'Memory',
+            'status': 'enabled' if bool(assistant_config.get('memory.enabled', True)) else 'disabled',
+            'details': 'Assistant long-term memory',
+        },
+    ]
 
     return jsonify({
-        'status': 'success',
-        'message': 'Scheduled task deleted successfully',
+        'profile': {
+            'id': user.id,
+            'name': user.username,
+            'email': user.email,
+            'role': user.role,
+        },
+        'preferences': {
+            'persona': persona.mode,
+            'language': assistant_config.get('stt.language', 'en'),
+            'memory_enabled': assistant_config.get('memory.enabled', True),
+            'timezone': timezone,
+            'primary_email': primary_email,
+        },
+        'memory': {
+            'name': user.username,
+            'timezone': timezone,
+            'primary_email': primary_email,
+        },
+        'connected_apps': connected_apps,
     })
 
 
@@ -1114,12 +1077,11 @@ def handle_connect(auth):
         return False
 
     _socket_users[request.sid] = socket_user
-    controller = controller_manager.get_controller(_get_user_scope(socket_user['id']))
     logger.info(f"[WebSocket] Client connected: {socket_user['username']} ({request.sid})")
     emit('connection_status', {
         'status': 'connected',
         'listening': is_listening,
-        'pending_confirmation': controller.has_pending_confirmation(),
+        'pending_confirmation': pending_confirmation is not None,
         'wake_word_active': wake_word_detector is not None and wake_word_detector.is_active
     })
 
@@ -1139,8 +1101,12 @@ def handle_command(data):
     Args:
         data: Dictionary containing 'command' key
     """
+    if not isinstance(data, dict):
+        emit('error', {'message': 'Invalid payload'})
+        return
+
     command = data.get('command', '')
-    language = data.get('language') if isinstance(data, dict) else None
+    language = data.get('language')
 
     if request.sid not in _socket_users:
         emit('error', {'message': 'Authentication required'})
@@ -1155,20 +1121,32 @@ def handle_command(data):
         return
 
     try:
-        socket_user = _socket_users.get(request.sid, {})
-        schedule_result = _handle_natural_schedule_command(command, socket_user.get('id'), language=language)
-        if schedule_result:
-            emit('command_result', schedule_result)
+        logger.info(f"[WebSocket] Processing command: {command}")
+
+        # Mirror REST behavior for exit commands
+        normalized = str(command).lower().strip()
+        if normalized in ["exit", "quit", "shutdown", "stop assistant", "goodbye", "close"]:
+            logger.info(f"[WebSocket] Exit command received: {command}")
+            socketio.emit('assistant_shutdown', {
+                'message': 'Shutting down assistant. Goodbye!',
+                'command': command
+            })
+            emit('command_result', {
+                'status': 'shutdown',
+                'message': 'Shutting down assistant. Goodbye!',
+                'data': {}
+            })
             return
 
-        controller = _get_controller_for_socket()
-        result = controller.process(command, language=language)
-        executed_plan = controller.get_last_plan_data()
-        if executed_plan and isinstance(executed_plan, dict):
-            emit_execution_steps(executed_plan)
+        # Process the command (plan generation + execution)
+        result = get_controller().process(command, language=language)
+
+        # Step progress is emitted in real-time by MultiExecutor via runtime_events.
         
         # Check if confirmation is required
         if result.get('status') == 'confirmation_required':
+            global pending_confirmation
+            pending_confirmation = result
             emit('confirmation_required', result)
         else:
             emit('command_result', result)
@@ -1221,17 +1199,20 @@ def voice_loop():
     Runs in a separate thread when listening is enabled
     Uses adaptive/proximity-based listening (stops on silence, not fixed duration)
     """
-    global is_listening, wake_word_detector, listening_user_id
+    global is_listening, pending_confirmation, wake_word_detector
     
     logger.info('[Voice Loop] Started (Adaptive mode - proximity-favored)')
+
+    # Lazy-import voice pipeline so API startup isn't blocked by Whisper/Torch.
+    from backend.voice_engine.audio_pipeline import listen_for_gui_adaptive, speak
     
     # Pause wake word detection during active listening
     if wake_word_detector and wake_word_detector.is_active:
         wake_word_detector.pause()
         logger.debug("[Voice Loop] Wake word detection paused during active listening")
-
-    controller = _get_voice_controller()
     
+    ctrl = get_controller()
+
     while is_listening:
         try:
             # Listen for voice input (adaptive mode - stops on silence)
@@ -1299,23 +1280,17 @@ def voice_loop():
                 speak("Shutting down assistant. Goodbye!")
                 break
             
-            # Process scheduling commands directly before invoking the general planner
-            schedule_result = _handle_natural_schedule_command(text, listening_user_id)
-            if schedule_result:
-                result = schedule_result
-            else:
-                # Process the command via controller's agent loop
-                result = controller.process(text)
+            # Process the command via controller's agent loop
+            result = ctrl.process(text)
 
             # Emit steps from the loop's executed plan (single source of truth)
-            executed_plan = controller.get_last_plan_data()
-            if executed_plan and isinstance(executed_plan, dict):
-                emit_execution_steps(executed_plan)
+                # Step progress is emitted in real-time by MultiExecutor via runtime_events.
 
             logger.info(f"[Voice Loop] Result: {result}")
             
             # Handle confirmation requirement
             if result.get('status') == 'confirmation_required':
+                pending_confirmation = result
                 socketio.emit('confirmation_required', result)
                 # Don't speak yet, wait for user confirmation via UI
             else:
@@ -1346,7 +1321,6 @@ def voice_loop():
             })
     
     logger.info('[Voice Loop] Stopped')
-    listening_user_id = None
     socketio.emit('listening_status', {'listening': False})
     
     # Resume wake word detection after voice loop stops
@@ -1408,23 +1382,23 @@ def initialize_database():
 
 
 def initialize_wake_word():
-    """Initialize wake-word detector at startup when enabled in config."""
+    """Initialize wake-word detector at startup only when explicitly enabled."""
     global wake_word_detector
 
     try:
-        enabled = bool(assistant_config.get('wake_word.enabled', False))
-        # Launcher can force-disable wake-word autostart for API stability.
-        env_override = os.environ.get('OMNIASSIST_WAKE_WORD_AUTOSTART', '').strip().lower()
-        if env_override in {'0', 'false', 'no', 'off'}:
-            enabled = False
-        elif env_override in {'1', 'true', 'yes', 'on'}:
-            enabled = True
+        autostart_raw = os.environ.get("OMNIASSIST_WAKE_WORD_AUTOSTART", "false").strip().lower()
+        autostart_enabled = autostart_raw in {"1", "true", "yes", "on"}
+        if not autostart_enabled:
+            logger.info('[WakeWord] Startup auto-enable is OFF (set OMNIASSIST_WAKE_WORD_AUTOSTART=true to enable).')
+            return
 
+        enabled = bool(assistant_config.get('wake_word.enabled', False))
         if not enabled:
             logger.info('[WakeWord] Startup auto-enable is OFF')
             return
 
         if wake_word_detector is None:
+            from backend.voice_engine.wake_word_detector import WakeWordDetector
             wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
 
         if not wake_word_detector.is_active:
@@ -1436,14 +1410,6 @@ def initialize_wake_word():
         logger.error(f"[WakeWord] Startup initialization error: {e}", exc_info=True)
 
 
-def initialize_scheduler():
-    """Start the task scheduler after the database is ready."""
-    try:
-        task_scheduler.start()
-    except Exception as e:
-        logger.error(f"[TaskScheduler] Startup initialization error: {e}", exc_info=True)
-
-
 def run_api_service(host='0.0.0.0', port=5000, debug=False):
     """
     Run the API service
@@ -1453,10 +1419,14 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
         port: Port to listen on (default: 5000)
         debug: Enable debug mode (default: False)
     """
-    # Initialize database and create default admin if needed
+    # Initialize database and create default admin if needed.
+    # Keep this synchronous so auth endpoints work immediately.
     initialize_database()
-    initialize_scheduler()
-    initialize_wake_word()
+
+    # Wake-word startup can touch audio devices and occasionally blocks/hangs
+    # on some systems/drivers. Run it in the background so the API can bind
+    # and the desktop UI can connect even if wake-word init is slow.
+    threading.Thread(target=initialize_wake_word, daemon=True).start()
     
     logger.info(f'API Service starting on http://{host}:{port}')
     logger.info('Available endpoints:')
@@ -1469,9 +1439,6 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
     logger.info('  POST /api/speak - Make assistant speak')
     logger.info('  POST /api/settings - Update settings (protected)')
     logger.info('  GET  /api/settings - Get settings')
-    logger.info('  GET  /api/schedules - List scheduled tasks (protected)')
-    logger.info('  POST /api/schedules - Create scheduled task (protected)')
-    logger.info('  DELETE /api/schedules/<id> - Delete scheduled task (protected)')
     logger.info('  POST /api/auth/register - Register new user')
     logger.info('  POST /api/auth/login - Login and get token')
     logger.info('  POST /api/auth/logout - Logout (protected)')
@@ -1483,14 +1450,18 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
     
     # IMPORTANT: disable reloader for threaded background services (wake-word loop).
     # Flask reloader starts the app twice in debug mode, which duplicates detector threads.
-    socketio.run(
-        app,
-        host=host,
-        port=port,
-        debug=debug,
-        use_reloader=False,
-        allow_unsafe_werkzeug=True,
-    )
+    run_kwargs = {
+        "host": host,
+        "port": port,
+        "debug": debug,
+        "use_reloader": False,
+    }
+
+    # Compatibility: older Flask-SocketIO versions don't accept allow_unsafe_werkzeug.
+    try:
+        socketio.run(app, **run_kwargs, allow_unsafe_werkzeug=True)
+    except TypeError:
+        socketio.run(app, **run_kwargs)
 
 
 if __name__ == '__main__':

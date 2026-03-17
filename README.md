@@ -192,24 +192,16 @@ AI-Based-Voice-Enabled-Intelligent-System-Assistant/
 │       ├── settings.py            # App settings
 │       └── logger.py              # Logging setup
 │
-├── desktop_1/                     # Desktop UI (CustomTkinter)
+├── desktop/                       # Desktop UI (CustomTkinter)
 │   ├── main.py                    # App controller — auth flow, window lifecycle
-│   ├── settings_manager.py        # Persistent UI settings (~/.omniassist/)
+│   ├── app.py                     # Bootstrap and application wiring
+│   ├── config.py                  # UI/client configuration
 │   ├── requirements.txt
-│   ├── ui/
-│   │   ├── chat_window.py         # Chat interface — bubbles, input, voice, logout
-│   │   ├── login_window.py        # JWT login form
-│   │   ├── register_window.py     # User registration form
-│   │   ├── settings_modal.py      # Settings dialog
-│   │   ├── listening_overlay.py   # Fullscreen Siri-style voice overlay
-│   │   ├── siri_orb.py            # Audio-reactive orb animation
-│   │   ├── status_bar.py          # Connection & state indicators
-│   │   └── confirmation_popup.py  # Safety confirmation dialogs
-│   ├── audio/
-│   │   └── mic_visualizer.py      # Microphone amplitude capture
-│   └── services/
-│       ├── api_client.py          # REST client — auth, commands, settings
-│       └── socket_client.py       # Socket.IO real-time client
+│   ├── core/                      # Desktop orchestration components
+│   ├── services/
+│   │   └── api_client.py          # REST client — auth, commands, settings
+│   ├── themes/
+│   └── ui/                        # Chat, login, visualization, and dialogs
 │
 ├── cli/                           # Command-line interfaces
 │   ├── app.py                     # Full CLI voice loop with confirmation
@@ -250,7 +242,7 @@ python -m venv venv
 
 # 3. Install dependencies
 pip install -r backend/requirements.txt
-pip install -r desktop_1/requirements.txt
+pip install -r desktop/requirements.txt
 
 # 4. (Optional) Install Ollama for LLM-powered understanding
 # Download from https://ollama.ai, then:
@@ -307,7 +299,7 @@ launcher.bat
 python backend/api_service.py
 
 # Terminal 2 — Desktop UI
-python desktop_1/main.py
+python desktop/main.py
 ```
 
 ---
@@ -405,7 +397,7 @@ pytest --cov=backend --cov-report=html    # With coverage report
 | Ollama not responding | Run `ollama serve`, verify with `curl http://localhost:11434/api/tags` |
 | UI won't connect | Ensure backend is running; check `http://localhost:5000/api/health` |
 | Login window not appearing | Backend must be running before launching desktop client |
-| Dependencies missing | `pip install -r backend/requirements.txt -r desktop_1/requirements.txt` |
+| Dependencies missing | `pip install -r backend/requirements.txt -r desktop/requirements.txt` |
 | Connection timeout | Increase `timeout_seconds` in `backend/config/assistant_config.json` |
 
 ---
