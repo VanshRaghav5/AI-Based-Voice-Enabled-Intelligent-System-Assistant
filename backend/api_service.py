@@ -8,21 +8,57 @@ to allow the desktop application to interact with the backend functionality.
 import sys
 import os
 from pathlib import Path
+import secrets
+
+
+def _load_dotenv(dotenv_path: Path) -> None:
+    """Load KEY=VALUE pairs from a .env file into the process environment.
+
+    - Ignores blank lines and comments.
+    - Does not override already-set environment variables.
+    - Supports quoted values (single or double quotes).
+    """
+    try:
+        if not dotenv_path.exists() or not dotenv_path.is_file():
+            return
+
+        for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                continue
+            if key in os.environ and os.environ[key].strip():
+                continue
+
+            if (len(value) >= 2) and ((value[0] == value[-1]) and value[0] in ("\"", "'")):
+                value = value[1:-1]
+
+            os.environ[key] = value
+    except Exception:
+        # Never fail startup due to .env parsing issues.
+        return
 
 # Add project root to Python path to support running from any directory
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+# Load local environment variables early (before importing modules that may read env vars).
+_load_dotenv(project_root / ".env")
+
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from backend.core.assistant_controller import AssistantController
 from backend.core import runtime_events
-from backend.voice_engine.audio_pipeline import listen_for_gui_adaptive, speak
-from backend.voice_engine.wake_word_detector import WakeWordDetector
 from backend.config.logger import logger
 from backend.core.persona import persona
 from backend.config.assistant_config import assistant_config
@@ -43,6 +79,11 @@ from typing import Optional, Dict, Any
 from functools import lru_cache
 from marshmallow import ValidationError
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.core.assistant_controller import AssistantController
+    from backend.voice_engine.wake_word_detector import WakeWordDetector
 
 
 def _get_required_env(name: str) -> str:
@@ -56,6 +97,24 @@ def _get_required_env(name: str) -> str:
     return value
 
 
+def _get_or_generate_secret(name: str) -> str:
+    """Return env var value or generate a dev-friendly ephemeral secret.
+
+    This prevents the backend from silently exiting when started in the background.
+    """
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+
+    generated = secrets.token_urlsafe(64)
+    os.environ[name] = generated
+    logger.warning(
+        f"[Config] {name} is not set; using an ephemeral generated secret. "
+        "Create a .env (see .env.example) to keep it stable across restarts."
+    )
+    return generated
+
+
 def _get_allowed_origins() -> list:
     """Parse trusted CORS origins from environment."""
     raw = os.environ.get(
@@ -66,7 +125,7 @@ def _get_allowed_origins() -> list:
     return origins or ["http://127.0.0.1:5000", "http://localhost:5000"]
 
 
-APP_SECRET_KEY = _get_required_env("OMNIASSIST_FLASK_SECRET_KEY")
+APP_SECRET_KEY = _get_or_generate_secret("OMNIASSIST_FLASK_SECRET_KEY")
 ALLOWED_ORIGINS = _get_allowed_origins()
 
 app = Flask(__name__)
@@ -84,11 +143,25 @@ limiter = Limiter(
 runtime_events.set_emitter(lambda event, payload: socketio.emit(event, payload))
 
 # Global state
-controller = AssistantController()
+controller: Optional["AssistantController"] = None
 is_listening = False
 pending_confirmation: Optional[Dict[str, Any]] = None
 listening_thread: Optional[threading.Thread] = None
-wake_word_detector: Optional[WakeWordDetector] = None
+wake_word_detector: Optional["WakeWordDetector"] = None
+
+
+def get_controller() -> "AssistantController":
+    """Lazy init of the assistant controller.
+
+    This avoids doing heavy LLM/tool initialization during API startup, which makes
+    auth + health endpoints responsive immediately.
+    """
+    global controller
+    if controller is None:
+        logger.info("[API] Initializing AssistantController (lazy)...")
+        from backend.core.assistant_controller import AssistantController
+        controller = AssistantController()
+    return controller
 
 # Cache for recent commands to avoid duplicate processing
 _command_cache = {}
@@ -245,7 +318,7 @@ def process_command():
         
         # Don't duplicate LLM calls - let controller handle plan generation
         # Process the command (this handles plan generation internally)
-        result = controller.process(command, language=language)
+        result = get_controller().process(command, language=language)
 
         # Step progress is emitted in real-time by MultiExecutor via runtime_events.
         
@@ -338,6 +411,7 @@ def start_wake_word():
     try:
         if wake_word_detector is None:
             # Initialize wake word detector with callback
+            from backend.voice_engine.wake_word_detector import WakeWordDetector
             wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
         
         if wake_word_detector.is_active:
@@ -423,7 +497,7 @@ def confirm_action():
     
     try:
         logger.info(f"[API] Action {'approved' if approved else 'rejected'}")
-        result = controller.confirm_action(approved)
+        result = get_controller().confirm_action(approved)
         pending_confirmation = None
         
         # Notify clients
@@ -461,6 +535,7 @@ def speak_text():
     
     try:
         logger.info(f"[API] Speaking: {text}")
+        from backend.voice_engine.audio_pipeline import speak
         speak(text)
         
         socketio.emit('speech_complete', {'text': text})
@@ -563,6 +638,34 @@ def update_settings():
             except Exception as e:
                 errors.append(f"memory: {str(e)}")
                 logger.error(f"[Settings] Error updating memory: {e}", exc_info=True)
+
+        # Update timezone
+        if 'timezone' in data:
+            try:
+                timezone = str(data['timezone']).strip() or os.environ.get('OMNIASSIST_TIMEZONE', 'IST')
+                success = assistant_config.set('assistant.timezone', timezone)
+                if success:
+                    updated.append(f"timezone={timezone}")
+                    logger.info(f"[Settings] Timezone updated to: {timezone}")
+                else:
+                    errors.append("timezone: failed to save to config")
+            except Exception as e:
+                errors.append(f"timezone: {str(e)}")
+                logger.error(f"[Settings] Error updating timezone: {e}", exc_info=True)
+
+        # Update primary email used by assistant workflows
+        if 'primary_email' in data:
+            try:
+                primary_email = str(data['primary_email']).strip()
+                success = assistant_config.set('assistant.primary_email', primary_email)
+                if success:
+                    updated.append(f"primary_email={primary_email}")
+                    logger.info(f"[Settings] Primary email updated to: {primary_email}")
+                else:
+                    errors.append("primary_email: failed to save to config")
+            except Exception as e:
+                errors.append(f"primary_email: {str(e)}")
+                logger.error(f"[Settings] Error updating primary email: {e}", exc_info=True)
         
         # Note: assistant_config.set() already saves to disk, no need to call save()
         
@@ -574,7 +677,9 @@ def update_settings():
             'settings': {
                 'persona': persona.mode,
                 'language': assistant_config.get('stt.language', 'en'),
-                'memory_enabled': assistant_config.get('memory.enabled', True)
+                'memory_enabled': assistant_config.get('memory.enabled', True),
+                'timezone': assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST')),
+                'primary_email': assistant_config.get('assistant.primary_email', ''),
             }
         }
         
@@ -603,7 +708,63 @@ def get_settings():
     return jsonify({
         'persona': persona.mode,
         'language': assistant_config.get('stt.language', 'en'),
-        'memory_enabled': assistant_config.get('memory.enabled', True)
+        'memory_enabled': assistant_config.get('memory.enabled', True),
+        'timezone': assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST')),
+        'primary_email': assistant_config.get('assistant.primary_email', getattr(request.current_user, 'email', '')),
+    })
+
+
+@app.route('/api/profile', methods=['GET'])
+@login_required
+def get_profile():
+    """Return user-facing personalization profile for desktop clients."""
+    user = request.current_user
+
+    timezone = assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST'))
+    primary_email = assistant_config.get('assistant.primary_email', user.email)
+
+    smtp_connected = bool(
+        os.environ.get('SMTP_HOST') and os.environ.get('SMTP_USER') and os.environ.get('SMTP_PASSWORD')
+    )
+
+    connected_apps = [
+        {
+            'name': 'Email',
+            'status': 'connected' if smtp_connected else 'not_connected',
+            'details': os.environ.get('SMTP_USER', ''),
+        },
+        {
+            'name': 'Wake Word',
+            'status': 'enabled' if bool(assistant_config.get('wake_word.enabled', False)) else 'disabled',
+            'details': ', '.join(assistant_config.get('wake_word.words', ['otto'])),
+        },
+        {
+            'name': 'Memory',
+            'status': 'enabled' if bool(assistant_config.get('memory.enabled', True)) else 'disabled',
+            'details': 'Assistant long-term memory',
+        },
+    ]
+
+    return jsonify({
+        'profile': {
+            'id': user.id,
+            'name': user.username,
+            'email': user.email,
+            'role': user.role,
+        },
+        'preferences': {
+            'persona': persona.mode,
+            'language': assistant_config.get('stt.language', 'en'),
+            'memory_enabled': assistant_config.get('memory.enabled', True),
+            'timezone': timezone,
+            'primary_email': primary_email,
+        },
+        'memory': {
+            'name': user.username,
+            'timezone': timezone,
+            'primary_email': primary_email,
+        },
+        'connected_apps': connected_apps,
     })
 
 
@@ -940,8 +1101,12 @@ def handle_command(data):
     Args:
         data: Dictionary containing 'command' key
     """
+    if not isinstance(data, dict):
+        emit('error', {'message': 'Invalid payload'})
+        return
+
     command = data.get('command', '')
-    language = data.get('language') if isinstance(data, dict) else None
+    language = data.get('language')
 
     if request.sid not in _socket_users:
         emit('error', {'message': 'Authentication required'})
@@ -953,6 +1118,29 @@ def handle_command(data):
         command = validated['command']
     except ValidationError as err:
         emit('error', {'message': 'Validation failed', 'errors': err.messages})
+        return
+
+    try:
+        logger.info(f"[WebSocket] Processing command: {command}")
+
+        # Mirror REST behavior for exit commands
+        normalized = str(command).lower().strip()
+        if normalized in ["exit", "quit", "shutdown", "stop assistant", "goodbye", "close"]:
+            logger.info(f"[WebSocket] Exit command received: {command}")
+            socketio.emit('assistant_shutdown', {
+                'message': 'Shutting down assistant. Goodbye!',
+                'command': command
+            })
+            emit('command_result', {
+                'status': 'shutdown',
+                'message': 'Shutting down assistant. Goodbye!',
+                'data': {}
+            })
+            return
+
+        # Process the command (plan generation + execution)
+        result = get_controller().process(command, language=language)
+
         # Step progress is emitted in real-time by MultiExecutor via runtime_events.
         
         # Check if confirmation is required
@@ -1014,12 +1202,17 @@ def voice_loop():
     global is_listening, pending_confirmation, wake_word_detector
     
     logger.info('[Voice Loop] Started (Adaptive mode - proximity-favored)')
+
+    # Lazy-import voice pipeline so API startup isn't blocked by Whisper/Torch.
+    from backend.voice_engine.audio_pipeline import listen_for_gui_adaptive, speak
     
     # Pause wake word detection during active listening
     if wake_word_detector and wake_word_detector.is_active:
         wake_word_detector.pause()
         logger.debug("[Voice Loop] Wake word detection paused during active listening")
     
+    ctrl = get_controller()
+
     while is_listening:
         try:
             # Listen for voice input (adaptive mode - stops on silence)
@@ -1088,7 +1281,7 @@ def voice_loop():
                 break
             
             # Process the command via controller's agent loop
-            result = controller.process(text)
+            result = ctrl.process(text)
 
             # Emit steps from the loop's executed plan (single source of truth)
                 # Step progress is emitted in real-time by MultiExecutor via runtime_events.
@@ -1189,16 +1382,23 @@ def initialize_database():
 
 
 def initialize_wake_word():
-    """Initialize wake-word detector at startup when enabled in config."""
+    """Initialize wake-word detector at startup only when explicitly enabled."""
     global wake_word_detector
 
     try:
+        autostart_raw = os.environ.get("OMNIASSIST_WAKE_WORD_AUTOSTART", "false").strip().lower()
+        autostart_enabled = autostart_raw in {"1", "true", "yes", "on"}
+        if not autostart_enabled:
+            logger.info('[WakeWord] Startup auto-enable is OFF (set OMNIASSIST_WAKE_WORD_AUTOSTART=true to enable).')
+            return
+
         enabled = bool(assistant_config.get('wake_word.enabled', False))
         if not enabled:
             logger.info('[WakeWord] Startup auto-enable is OFF')
             return
 
         if wake_word_detector is None:
+            from backend.voice_engine.wake_word_detector import WakeWordDetector
             wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
 
         if not wake_word_detector.is_active:
@@ -1219,9 +1419,14 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
         port: Port to listen on (default: 5000)
         debug: Enable debug mode (default: False)
     """
-    # Initialize database and create default admin if needed
+    # Initialize database and create default admin if needed.
+    # Keep this synchronous so auth endpoints work immediately.
     initialize_database()
-    initialize_wake_word()
+
+    # Wake-word startup can touch audio devices and occasionally blocks/hangs
+    # on some systems/drivers. Run it in the background so the API can bind
+    # and the desktop UI can connect even if wake-word init is slow.
+    threading.Thread(target=initialize_wake_word, daemon=True).start()
     
     logger.info(f'API Service starting on http://{host}:{port}')
     logger.info('Available endpoints:')
@@ -1245,14 +1450,18 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
     
     # IMPORTANT: disable reloader for threaded background services (wake-word loop).
     # Flask reloader starts the app twice in debug mode, which duplicates detector threads.
-    socketio.run(
-        app,
-        host=host,
-        port=port,
-        debug=debug,
-        use_reloader=False,
-        allow_unsafe_werkzeug=True,
-    )
+    run_kwargs = {
+        "host": host,
+        "port": port,
+        "debug": debug,
+        "use_reloader": False,
+    }
+
+    # Compatibility: older Flask-SocketIO versions don't accept allow_unsafe_werkzeug.
+    try:
+        socketio.run(app, **run_kwargs, allow_unsafe_werkzeug=True)
+    except TypeError:
+        socketio.run(app, **run_kwargs)
 
 
 if __name__ == '__main__':

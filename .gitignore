@@ -6,6 +6,9 @@ venv/
 .env/
 backend/venv/
 desktop/venv/
+backend/venv_test/
+%TEMP%/
+
 
 # ==================================
 # Python Cache / Build Files

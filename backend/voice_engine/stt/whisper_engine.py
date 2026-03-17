@@ -4,6 +4,7 @@ import os
 import re
 import numpy as np
 import scipy.io.wavfile as wavfile
+import threading
 
 from backend.config.logger import logger
 from backend.config.settings import (
@@ -21,6 +22,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 logger.info(f"Whisper running on: {DEVICE}")
 
 model = None
+_model_lock = threading.Lock()
 
 
 def load_whisper_model():
@@ -35,6 +37,26 @@ def load_whisper_model():
         model = None
 
     return model
+
+
+def _ensure_model_loaded() -> bool:
+    """Load the Whisper model on-demand.
+
+    Startup loading can be very slow and makes the backend feel "hung".
+    We therefore load lazily on the first transcription request.
+    """
+    global model
+
+    if model is not None:
+        return True
+
+    with _model_lock:
+        if model is not None:
+            return True
+        logger.info(f"[Whisper] Lazy-loading model '{WHISPER_MODEL}'...")
+        load_whisper_model()
+
+    return model is not None
 
 
 def _normalize_audio(audio_float: np.ndarray) -> np.ndarray:
@@ -62,9 +84,6 @@ def _apply_text_corrections(text: str) -> str:
     return corrected
 
 
-load_whisper_model()
-
-
 def transcribe_audio(
     audio_path: str,
     *,
@@ -74,7 +93,7 @@ def transcribe_audio(
     log_prefix: str = "[Whisper]",
 ) -> str:
 
-    if model is None:
+    if model is None and not _ensure_model_loaded():
         logger.error("[Whisper Error] Model not loaded.")
         return ""
 
