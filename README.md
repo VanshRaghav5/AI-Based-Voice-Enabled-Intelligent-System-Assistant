@@ -249,9 +249,15 @@ pip install -r desktop/requirements.txt
 ollama pull qwen2.5:7b-instruct-q4_0
 ```
 
-### Required Security Environment Variables
+### Security Secrets
 
-Set these once before running the backend (or `START.bat`):
+No manual secret setup is required for local desktop use.
+
+On first run, the backend automatically generates required secrets and stores them locally at:
+
+- `%USERPROFILE%\.omniassist\secrets.json`
+
+You can still override them manually (advanced deployments):
 
 ```powershell
 setx OMNIASSIST_FLASK_SECRET_KEY "replace-with-long-random-secret"
