@@ -111,3 +111,17 @@ backend/voice_engine/tts/piper/input.txt
 # ==================================
 *.bak
 *.tmp
+
+# ==================================
+# Local Debug / Diagnostic Artifacts
+# ==================================
+dump_hang.py
+hang_dump.txt
+import_trace.txt
+out.txt
+test_import.py
+test_import3.py
+test_import4.py
+test_import5.py
+test_import6.py
+test_import7.py
