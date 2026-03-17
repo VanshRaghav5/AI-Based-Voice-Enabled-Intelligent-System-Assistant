@@ -4,6 +4,16 @@
 
 The Voice Assistant Backend API provides RESTful endpoints and WebSocket connections for desktop applications to interact with the voice assistant system. This enables real-time voice processing, command execution, and bidirectional communication.
 
+Current runtime behavior:
+- Bounded agent loop (`plan -> act -> observe -> replan`)
+- Confirmation checkpoints for critical operations
+- Persistent memory loaded from local disk
+
+Related docs:
+- [HANDBOOK.md](HANDBOOK.md)
+- [README.md](README.md)
+- [reports/REPORTS_SUMMARY.md](reports/REPORTS_SUMMARY.md)
+
 ## Base URL
 
 ```
@@ -65,6 +75,11 @@ Get current assistant status including listening state and pending confirmations
 #### `POST /api/process_command`
 
 Process a text command through the assistant controller.
+
+Notes:
+- The controller may run multiple internal iterations before returning final status.
+- If a critical step is reached, response status is `confirmation_required`.
+- After confirmation, execution resumes from the pending step.
 
 **Request Body:**
 ```json
@@ -203,6 +218,174 @@ Make the assistant speak text using TTS.
   "text": "Hello, how can I help you?"
 }
 ```
+
+---
+
+### Authentication
+
+#### `POST /api/auth/register`
+
+Register a new user.
+
+**Request Body:**
+```json
+{
+  "username": "alice",
+  "email": "alice@example.com",
+  "password": "StrongPass123"
+}
+```
+
+**Response (201):**
+```json
+{
+  "status": "success",
+  "message": "User created successfully",
+  "user": {
+    "username": "alice",
+    "email": "alice@example.com",
+    "role": "user"
+  }
+}
+```
+
+---
+
+#### `POST /api/auth/login`
+
+Authenticate and receive a JWT token.
+
+**Request Body:**
+```json
+{
+  "username": "alice",
+  "password": "StrongPass123"
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "message": "Login successful",
+  "token": "<jwt>",
+  "expires_at": "2026-01-01T00:00:00",
+  "user": {
+    "id": 1,
+    "username": "alice",
+    "email": "alice@example.com",
+    "role": "user"
+  }
+}
+```
+
+---
+
+#### `POST /api/auth/logout`
+
+Revoke the current JWT token.
+
+**Headers:**
+```text
+Authorization: Bearer <jwt>
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "message": "Logged out successfully"
+}
+```
+
+---
+
+#### `GET /api/auth/verify`
+
+Verify whether the current token is valid.
+
+**Headers:**
+```text
+Authorization: Bearer <jwt>
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "message": "Token is valid",
+  "user": {
+    "id": 1,
+    "username": "alice",
+    "email": "alice@example.com",
+    "role": "user"
+  }
+}
+```
+
+---
+
+#### `POST /api/auth/password-reset/request`
+
+Request password-reset instructions via email. This endpoint always returns a generic success message to prevent account enumeration.
+
+**Rate limit:** `5 per hour`
+
+**Request Body:**
+```json
+{
+  "email": "alice@example.com"
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "message": "If an account with that email exists, reset instructions have been sent."
+}
+```
+
+---
+
+#### `POST /api/auth/password-reset/confirm`
+
+Complete password reset with a one-time token and a new password.
+
+**Rate limit:** `10 per hour`
+
+**Request Body:**
+```json
+{
+  "token": "<one-time-token>",
+  "new_password": "NewStrongPass456"
+}
+```
+
+**Response (200):**
+```json
+{
+  "status": "success",
+  "message": "Password reset successful. Please log in again."
+}
+```
+
+**Validation Notes:**
+- `new_password` must be at least 8 characters.
+- It must include at least one uppercase letter, one lowercase letter, and one digit.
+- Reset tokens expire after 30 minutes and are single-use.
+
+---
+
+### Password Reset Email Configuration
+
+The password reset request endpoint requires SMTP configuration in environment variables:
+
+- `SMTP_HOST`: SMTP server host (for example `smtp.gmail.com`)
+- `SMTP_PORT`: SMTP server port (default `587`)
+- `SMTP_USER`: SMTP username / sender email
+- `SMTP_PASSWORD`: SMTP password or app password
+- `PASSWORD_RESET_URL` (optional): Base URL sent to users for reset links. If not set, fallback is `http://localhost:5000/reset-password?token=<token>`
 
 ---
 
@@ -548,13 +731,13 @@ socket.emit('send_command', {command: 'open browser'});
 ⚠️ **Important**: This API is designed for local development and testing.
 
 For production use:
-1. Change the `SECRET_KEY` in `api_service.py`
-2. Implement authentication/authorization
+1. Move `SECRET_KEY` and other secrets to environment variables
+2. Enforce strong authentication/authorization policy for all sensitive routes
 3. Use HTTPS/WSS instead of HTTP/WS
-4. Restrict CORS to specific origins
-5. Add rate limiting
+4. Restrict CORS to specific trusted origins
+5. Keep route-level rate limits tuned for your traffic profile
 6. Validate and sanitize all inputs
-7. Implement proper error handling
+7. Implement proper error handling and audit logging
 
 ---
 

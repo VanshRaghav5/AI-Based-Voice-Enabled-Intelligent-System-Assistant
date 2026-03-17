@@ -1,0 +1,74 @@
+/* OmniAssist Dark Theme */
+
+QWidget {
+    background-color: #121212;
+    color: #e0e0e0;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+}
+
+QLineEdit {
+    background-color: #1f2937;
+    color: white;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    padding: 10px;
+    selection-background-color: #3b82f6;
+}
+
+QLineEdit:focus {
+    border: 1px solid #3b82f6;
+}
+
+QPushButton {
+    background-color: #374151;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #4b5563;
+}
+
+QPushButton:pressed {
+    background-color: #6b7280;
+}
+
+QScrollArea {
+    border: none;
+    background: transparent;
+}
+
+QScrollBar:vertical {
+    border: none;
+    background: #121212;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #4b5563;
+    min-height: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #6b7280;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+QSplitter::handle {
+    background-color: #374151;
+}
+
+/* Specific buttons styled in main_window.py can override these defaults if needed, but defaults are solid. */

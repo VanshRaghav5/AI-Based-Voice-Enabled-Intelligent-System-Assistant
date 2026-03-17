@@ -15,4 +15,7 @@ class SessionStateSchema:
 
     last_intent: Optional[str] = None
 
+    # User-defined long-term facts (e.g., name preferences, reminders)
+    facts: Dict[str, str] = field(default_factory=dict)
+
     execution_history: List[Dict] = field(default_factory=list)
