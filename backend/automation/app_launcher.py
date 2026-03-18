@@ -1,5 +1,10 @@
 import subprocess
 import os
+import time
+import tempfile
+
+import pyperclip
+
 from backend.automation.base_tool import BaseTool
 from backend.automation.error_handler import error_handler, AutomationError
 from backend.automation.window_detection import window_detector
@@ -82,6 +87,70 @@ def open_app(app_name: str) -> dict:
     )
 
 
+def open_notepad_and_write(text: str) -> dict:
+    """Open Notepad and write the provided text into the editor."""
+
+    def _write():
+        message = (text or "").strip()
+        if not message:
+            raise AutomationError(
+                "Missing text for Notepad write",
+                "I need text to write in Notepad.",
+            )
+
+        logger.info("[Notepad] Opening Notepad for text entry")
+        subprocess.Popen(APP_MAP["notepad"], shell=True)
+
+        # Allow process/window to initialize before sending input.
+        time.sleep(1.1)
+        window_detector.wait_for_window("Notepad", timeout=8)
+        window_detector.focus_window("Notepad")
+        time.sleep(0.25)
+
+        try:
+            import keyboard
+
+            pyperclip.copy(message)
+            keyboard.press_and_release("ctrl+v")
+        except Exception as e:
+            logger.warning(f"[Notepad] Clipboard paste failed, falling back to direct typing: {e}")
+            try:
+                import keyboard
+
+                keyboard.write(message, delay=0.01)
+            except Exception as type_err:
+                logger.warning(f"[Notepad] Direct typing failed, using file-backed fallback: {type_err}")
+                try:
+                    temp_path = os.path.join(
+                        tempfile.gettempdir(),
+                        f"omniassist_note_{int(time.time())}.txt",
+                    )
+                    with open(temp_path, "w", encoding="utf-8") as f:
+                        f.write(message)
+
+                    subprocess.Popen(f'notepad.exe "{temp_path}"', shell=True)
+                except Exception as fallback_err:
+                    raise AutomationError(
+                        f"Failed to enter text in Notepad: {fallback_err}",
+                        "I opened Notepad but could not write the message.",
+                    )
+
+        return {
+            "status": "success",
+            "message": f"Opened Notepad and wrote {len(message)} characters",
+            "data": {
+                "app": "notepad",
+                "text_length": len(message),
+            },
+        }
+
+    return error_handler.wrap_automation(
+        func=_write,
+        operation_name="Notepad Write Text",
+        context={"app": "notepad"},
+    )
+
+
 # =====================================================
 # Tool Class for Registry Integration
 # =====================================================
@@ -95,3 +164,13 @@ class AppLauncherTool(BaseTool):
     def execute(self, app_name: str):
         """Open application by name"""
         return open_app(app_name)
+
+
+class NotepadWriteTool(BaseTool):
+    name = "notepad.write"
+    description = "Open Notepad and write the provided text"
+    risk_level = "low"
+    requires_confirmation = False
+
+    def execute(self, text: str):
+        return open_notepad_and_write(text)

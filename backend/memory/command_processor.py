@@ -25,8 +25,9 @@ class MemoryCommandProcessor:
                     "data": {"memory": {"action": "remember", "key": key, "value": value}},
                 }
 
+        # Recall should only trigger for explicit memory-intent commands.
         recall_match = re.match(
-            r"^(?:recall|what do you remember about|tell me about|what(?:'s| is| are))\s+(.+?)\??$",
+            r"^(?:recall(?:\s+memory)?|what do you remember about|do you remember)\s+(.+?)\??$",
             cleaned,
             flags=re.IGNORECASE,
         )
@@ -45,7 +46,14 @@ class MemoryCommandProcessor:
                 "data": {"memory": {"action": "recall", "key": key, "value": value, "found": True}},
             }
 
-        if any(query_token in lowered for query_token in ["what", "which", "tell me", "do you know", "do you remember"]):
+        memory_query_tokens = [
+            "do you remember",
+            "what do you remember",
+            "from memory",
+            "saved memory",
+            "remembered",
+        ]
+        if any(query_token in lowered for query_token in memory_query_tokens):
             facts = self.memory.list_facts()
             matched_key = None
             for fact_key in sorted(facts.keys(), key=len, reverse=True):

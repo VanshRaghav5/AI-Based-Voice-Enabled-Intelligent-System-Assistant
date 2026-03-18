@@ -2,9 +2,16 @@ import keyboard
 import time
 
 from backend.voice_engine.input.recorder import record_audio_while_held, record_audio_fixed, record_audio_until_silence
-from backend.voice_engine.stt.whisper_engine import transcribe_audio
-from backend.voice_engine.tts.tts_engine import speak_text
 from backend.config.logger import logger
+
+try:
+    from backend.voice_engine.stt.faster_whisper_engine import transcribe_audio
+    logger.info("[STT] Using faster-whisper engine")
+except ModuleNotFoundError:
+    from backend.voice_engine.stt.whisper_engine import transcribe_audio
+    logger.warning("[STT] faster-whisper not installed; falling back to whisper_engine")
+
+from backend.voice_engine.tts.tts_engine import speak_text
 
 
 PUSH_TO_TALK_KEY = "space"
@@ -96,7 +103,7 @@ def listen_for_gui(duration: float = LISTENING_TIMEOUT) -> str:
         return ""
 
 
-def listen_for_gui_adaptive() -> str:
+def listen_for_gui_adaptive(should_stop=None) -> str:
     """
     Listen for voice input with ADAPTIVE/PROXIMITY-based duration.
     
@@ -114,7 +121,11 @@ def listen_for_gui_adaptive() -> str:
         logger.info("[GUI Listen - Adaptive] Waiting for voice input...")
         
         # Record audio until silence is detected
-        audio_path = record_audio_until_silence()
+        audio_path = record_audio_until_silence(
+            max_duration=8.0,
+            chunk_size=0.05,
+            should_stop=should_stop,
+        )
         
         if not audio_path:
             logger.warning("[GUI Listen - Adaptive] No audio captured")

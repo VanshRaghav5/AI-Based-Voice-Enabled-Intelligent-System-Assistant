@@ -7,25 +7,70 @@ import tempfile
 import numpy as np
 
 from backend.config.logger import logger
-from backend.config.settings import SAMPLE_RATE
+from backend.config.settings import SAMPLE_RATE, RECORDING_INPUT_DEVICE, RECORDING_MIN_AUDIO_LEVEL
 
 
-MIN_AUDIO_LEVEL = 200  # RMS threshold; below this is considered silence
-SILENCE_THRESHOLD = 350  # RMS threshold; below this triggers silence counter
-SILENCE_DURATION = 1.5  # Seconds of silence before stopping recording
-INITIAL_LISTEN_TIME = 2.0  # Wait up to 2 seconds for user to start speaking
+MIN_AUDIO_LEVEL = RECORDING_MIN_AUDIO_LEVEL  # RMS threshold; below this is considered silence
+SILENCE_THRESHOLD = max(140, int(MIN_AUDIO_LEVEL * 2))  # Speech gate tuned for typical laptop mic RMS
+SILENCE_DURATION = 1.0  # Seconds of silence before stopping recording
+INITIAL_LISTEN_TIME = 1.8  # Give user more time to start speaking
+
+_INPUT_DEVICE_LOGGED = False
 
 
-def record_audio_fixed(duration: float = 4.0, sample_rate: int = SAMPLE_RATE) -> str:
+def _input_kwargs() -> dict:
+    """Resolve optional input device setting for sounddevice APIs."""
+    global _INPUT_DEVICE_LOGGED
+    if RECORDING_INPUT_DEVICE in (None, "", "default"):
+        return {}
+
+    device = RECORDING_INPUT_DEVICE
+    if isinstance(device, str):
+        stripped = device.strip()
+        if stripped.isdigit():
+            device = int(stripped)
+        else:
+            device = stripped
+
+    if not _INPUT_DEVICE_LOGGED:
+        logger.info(f"[Recorder] Using configured input device: {device}")
+        _INPUT_DEVICE_LOGGED = True
+
+    return {"device": device}
+
+
+def _trim_silence(audio: np.ndarray, threshold: int = SILENCE_THRESHOLD) -> np.ndarray:
+    """Trim low-energy leading/trailing regions to reduce STT hallucinations."""
+    if audio.size == 0:
+        return audio
+
+    mono = audio.reshape(-1) if audio.ndim > 1 else audio
+    energy_idx = np.where(np.abs(mono.astype(np.int32)) > int(threshold * 0.6))[0]
+
+    if energy_idx.size == 0:
+        return np.array([], dtype=audio.dtype)
+
+    start = int(energy_idx[0])
+    end = int(energy_idx[-1]) + 1
+    return audio[start:end]
+
+
+def record_audio_fixed(
+    duration: float = 4.0,
+    sample_rate: int = SAMPLE_RATE,
+    *,
+    warn_on_silence: bool = True,
+) -> str:
     """Record for a fixed duration (fallback)."""
     frames = int(duration * sample_rate)
-    audio = sd.rec(frames, samplerate=sample_rate, channels=1, dtype="int16")
+    audio = sd.rec(frames, samplerate=sample_rate, channels=1, dtype="int16", **_input_kwargs())
     sd.wait()
-    return _save_and_validate(audio, sample_rate)
+    return _save_and_validate(audio, sample_rate, warn_on_silence=warn_on_silence)
 
 
 def record_audio_while_held(key_check_fn, sample_rate: int = SAMPLE_RATE,
-                            max_duration: float = 30.0, chunk_size: float = 0.1) -> str:
+                            max_duration: float = 30.0, chunk_size: float = 0.1,
+                            *, warn_on_silence: bool = True) -> str:
     """Record dynamically while key is held, stop when released."""
     chunks = []
     total = 0.0
@@ -33,7 +78,7 @@ def record_audio_while_held(key_check_fn, sample_rate: int = SAMPLE_RATE,
 
     logger.info("[Recorder] Dynamic recording started (speaking...)")
 
-    with sd.InputStream(samplerate=sample_rate, channels=1, dtype="int16") as stream:
+    with sd.InputStream(samplerate=sample_rate, channels=1, dtype="int16", **_input_kwargs()) as stream:
         while key_check_fn() and total < max_duration:
             data, _ = stream.read(chunk_frames)
             chunks.append(data.copy())
@@ -45,7 +90,7 @@ def record_audio_while_held(key_check_fn, sample_rate: int = SAMPLE_RATE,
 
     audio = np.concatenate(chunks, axis=0)
     logger.info(f"[Recorder] Captured {total:.1f}s of audio")
-    return _save_and_validate(audio, sample_rate)
+    return _save_and_validate(audio, sample_rate, warn_on_silence=warn_on_silence)
 
 
 def record_audio(duration: float = 4.0, sample_rate: int = SAMPLE_RATE) -> str:
@@ -55,7 +100,8 @@ def record_audio(duration: float = 4.0, sample_rate: int = SAMPLE_RATE) -> str:
 
 def record_audio_until_silence(sample_rate: int = SAMPLE_RATE, 
                                 max_duration: float = 30.0,
-                                chunk_size: float = 0.1) -> str:
+                                chunk_size: float = 0.1,
+                                should_stop=None) -> str:
     """
     Record audio until silence is detected (proximity-favored).
     
@@ -77,13 +123,18 @@ def record_audio_until_silence(sample_rate: int = SAMPLE_RATE,
     total_time = 0.0
     silence_time = 0.0
     has_spoken = False
+    ended_without_speech = False
     chunk_frames = int(chunk_size * sample_rate)
     
     logger.info("[Recorder] Adaptive recording started - waiting for voice...")
     
     try:
-        with sd.InputStream(samplerate=sample_rate, channels=1, dtype="int16") as stream:
+        with sd.InputStream(samplerate=sample_rate, channels=1, dtype="int16", **_input_kwargs()) as stream:
             while total_time < max_duration:
+                if callable(should_stop) and should_stop():
+                    logger.info("[Recorder] Stop requested externally - ending recording")
+                    break
+
                 # Read audio chunk
                 data, _ = stream.read(chunk_frames)
                 chunks.append(data.copy())
@@ -111,6 +162,7 @@ def record_audio_until_silence(sample_rate: int = SAMPLE_RATE,
                     # If waiting for voice to start and time exceeded, stop
                     if not has_spoken and total_time >= INITIAL_LISTEN_TIME:
                         logger.warning(f"[Recorder] No speech detected in {INITIAL_LISTEN_TIME}s - stopping")
+                        ended_without_speech = True
                         break
     
     except Exception as e:
@@ -120,14 +172,23 @@ def record_audio_until_silence(sample_rate: int = SAMPLE_RATE,
     if not chunks:
         logger.warning("[Recorder] No audio chunks captured")
         return ""
+
+    if ended_without_speech and not has_spoken:
+        logger.debug("[Recorder] Exiting adaptive capture without speech")
+        return ""
     
     # Concatenate all chunks
     audio = np.concatenate(chunks, axis=0)
+    audio = _trim_silence(audio)
+    if audio.size == 0:
+        logger.warning("[Recorder] Audio was only silence after trimming")
+        return ""
+
     logger.info(f"[Recorder] Captured {total_time:.1f}s of adaptive audio")
     return _save_and_validate(audio, sample_rate)
 
 
-def _save_and_validate(audio: np.ndarray, sample_rate: int) -> str:
+def _save_and_validate(audio: np.ndarray, sample_rate: int, *, warn_on_silence: bool = True) -> str:
     """Save audio array to temp WAV file and validate it has actual sound."""
     try:
         temp_dir = tempfile.gettempdir()
@@ -144,7 +205,10 @@ def _save_and_validate(audio: np.ndarray, sample_rate: int) -> str:
         rms = int(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
         logger.info(f"[Recorder] Audio RMS level: {rms} (threshold: {MIN_AUDIO_LEVEL})")
         if rms < MIN_AUDIO_LEVEL:
-            logger.warning("[Recorder] Audio appears SILENT — check microphone input device")
+            if warn_on_silence:
+                logger.warning("[Recorder] Audio appears SILENT — check microphone input device")
+            else:
+                logger.debug("[Recorder] Wake-word chunk below speech threshold")
 
         file_size = os.path.getsize(temp_filepath)
         logger.info(f"[Recorder] Recording complete. File: {temp_filepath} ({file_size} bytes)")

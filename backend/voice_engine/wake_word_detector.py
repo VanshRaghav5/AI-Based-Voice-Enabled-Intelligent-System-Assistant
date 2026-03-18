@@ -9,10 +9,18 @@ import threading
 import time
 import re
 from difflib import SequenceMatcher
+import numpy as np
+import scipy.io.wavfile as wavfile
 from backend.voice_engine.input.recorder import record_audio_fixed
-from backend.voice_engine.stt.whisper_engine import transcribe_audio
 from backend.config.logger import logger
 from backend.config.assistant_config import assistant_config
+
+try:
+    from backend.voice_engine.stt.faster_whisper_engine import transcribe_audio
+    logger.info("[WakeWord] Using faster-whisper STT")
+except ModuleNotFoundError:
+    from backend.voice_engine.stt.whisper_engine import transcribe_audio
+    logger.warning("[WakeWord] faster-whisper unavailable; falling back to whisper_engine")
 
 
 class WakeWordDetector:
@@ -23,7 +31,7 @@ class WakeWordDetector:
     Continuously monitors for configured wake words.
     """
     
-    def __init__(self, callback=None, wake_words=None):
+    def __init__(self, callback=None, wake_words=None, on_state_change=None):
         """
         Initialize wake word detector.
         
@@ -32,11 +40,14 @@ class WakeWordDetector:
             wake_words: List of wake words to detect (default from config)
         """
         self.callback = callback
+        self.on_state_change = on_state_change
         self.wake_words = wake_words or self._get_wake_words_from_config()
         self.is_active = False
         self.is_paused = False  # Pause during active conversation
         self._thread = None
         self._lock = threading.Lock()
+        self._last_error = ""
+        self._consecutive_errors = 0
         
         logger.info(f"[WakeWord] Initialized with wake words: {self.wake_words}")
     
@@ -54,6 +65,17 @@ class WakeWordDetector:
             f"{words}. "
             "If heard, transcribe exactly as spoken."
         )
+
+    def _audio_rms(self, audio_path: str) -> float:
+        """Estimate RMS from WAV for fast silence rejection before STT."""
+        try:
+            _, audio_data = wavfile.read(audio_path)
+            audio = audio_data.astype(np.float32)
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
+            return float(np.sqrt(np.mean(np.square(audio)))) if audio.size else 0.0
+        except Exception:
+            return 0.0
 
     def _normalize_text(self, text: str) -> str:
         """Normalize transcript text for more robust wake-word matching."""
@@ -97,12 +119,14 @@ class WakeWordDetector:
         with self._lock:
             if self.is_active:
                 logger.warning("[WakeWord] Already active")
-                return
+                return True
             
             self.is_active = True
             self._thread = threading.Thread(target=self._detection_loop, daemon=True)
             self._thread.start()
+            self._notify_state_change()
             logger.info("[WakeWord] Detection started")
+            return True
     
     def stop(self):
         """Stop wake word detection."""
@@ -116,16 +140,42 @@ class WakeWordDetector:
         # Wait for thread to finish
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
+
+        self._notify_state_change()
     
     def pause(self):
         """Pause wake word detection (e.g., during active conversation)."""
         self.is_paused = True
+        self._notify_state_change()
         logger.debug("[WakeWord] Detection paused")
     
     def resume(self):
         """Resume wake word detection."""
         self.is_paused = False
+        self._notify_state_change()
         logger.debug("[WakeWord] Detection resumed")
+
+    def status_snapshot(self):
+        """Return detector status for API and diagnostics."""
+        thread_alive = bool(self._thread and self._thread.is_alive())
+        return {
+            "active": bool(self.is_active and thread_alive),
+            "configured_active": bool(self.is_active),
+            "thread_alive": thread_alive,
+            "paused": bool(self.is_paused),
+            "wake_words": list(self.wake_words),
+            "consecutive_errors": int(self._consecutive_errors),
+            "last_error": self._last_error,
+        }
+
+    def _notify_state_change(self):
+        """Invoke optional lifecycle callback."""
+        if not self.on_state_change:
+            return
+        try:
+            self.on_state_change(self.status_snapshot())
+        except Exception as e:
+            logger.debug(f"[WakeWord] State callback failed: {e}")
     
     def _detection_loop(self):
         """
@@ -143,6 +193,8 @@ class WakeWordDetector:
         
         while self.is_active:
             try:
+                poll_interval = float(assistant_config.get('wake_word.poll_interval_seconds', 0.8))
+
                 # Skip if paused (during active conversation)
                 if self.is_paused:
                     time.sleep(0.5)
@@ -150,11 +202,20 @@ class WakeWordDetector:
                 
                 # Record short audio chunk for low-latency wake detection.
                 duration = float(assistant_config.get('wake_word.listen_duration', 1.8))
-                audio_path = record_audio_fixed(duration=duration)
+                audio_path = record_audio_fixed(duration=duration, warn_on_silence=False)
                 
                 if not audio_path:
                     logger.debug("[WakeWord] No audio captured")
-                    time.sleep(0.2)
+                    time.sleep(poll_interval)
+                    continue
+
+                wake_rms_gate = float(assistant_config.get("wake_word.min_rms_int16", 250.0))
+                rms = self._audio_rms(audio_path)
+                if rms < wake_rms_gate:
+                    logger.debug(
+                        f"[WakeWord] Skipping STT for low RMS chunk ({rms:.1f} < {wake_rms_gate:.1f})"
+                    )
+                    time.sleep(poll_interval)
                     continue
                 
                 # Transcribe with wake-word-biased prompt.
@@ -164,11 +225,13 @@ class WakeWordDetector:
                     language_override="en",
                     initial_prompt_override=self._build_wake_prompt(),
                     apply_corrections=False,
+                    min_audio_rms_override=float(assistant_config.get("wake_word.min_audio_rms", 0.0035)),
+                    log_prob_threshold_override=float(assistant_config.get("wake_word.log_prob_threshold", -1.25)),
                     log_prefix="[WakeWord/STT]",
                 )
                 
                 if not text:
-                    time.sleep(0.1)
+                    time.sleep(poll_interval)
                     continue
                 
                 logger.debug(f"[WakeWord] Heard: '{text}'")
@@ -178,6 +241,8 @@ class WakeWordDetector:
                 if detected_word:
                     logger.info(f"[WakeWord] ✓ DETECTED: '{detected_word}' in '{text}'")
                     consecutive_errors = 0  # Reset error counter
+                    self._consecutive_errors = 0
+                    self._last_error = ""
                     
                     # Pause detection to prevent re-triggering
                     self.pause()
@@ -193,8 +258,8 @@ class WakeWordDetector:
                     time.sleep(2.0)
                     self.resume()
                 else:
-                    # Small delay to avoid hammering CPU
-                    time.sleep(0.2)
+                    # Configurable delay to avoid near-continuous polling
+                    time.sleep(poll_interval)
                 
             except KeyboardInterrupt:
                 logger.info("[WakeWord] Detection interrupted")
@@ -202,18 +267,22 @@ class WakeWordDetector:
             
             except Exception as e:
                 consecutive_errors += 1
+                self._consecutive_errors = consecutive_errors
+                self._last_error = str(e)
                 logger.error(f"[WakeWord] Error in detection loop: {e}")
                 
                 # Stop if too many consecutive errors
                 if consecutive_errors >= max_consecutive_errors:
                     logger.error(f"[WakeWord] Too many errors ({consecutive_errors}), stopping detection")
                     self.is_active = False
+                    self._notify_state_change()
                     break
                 
                 # Back off on errors
                 time.sleep(1.0)
         
         logger.info("[WakeWord] Detection loop stopped")
+        self._notify_state_change()
 
 
 # Global instance
