@@ -150,6 +150,14 @@ listening_thread: Optional[threading.Thread] = None
 wake_word_detector: Optional["WakeWordDetector"] = None
 
 
+def _emit_wake_word_state(state: Dict[str, Any]):
+    """Broadcast wake-word lifecycle state to all connected clients."""
+    try:
+        socketio.emit('wake_word_status', state)
+    except Exception as e:
+        logger.debug(f"[WakeWord] Failed to emit wake_word_status: {e}")
+
+
 def get_controller() -> "AssistantController":
     """Lazy init of the assistant controller.
 
@@ -358,7 +366,11 @@ def start_listening():
             return jsonify({'message': 'Already listening', 'listening': True}), 200
         
         is_listening = True
-        listening_thread = threading.Thread(target=voice_loop, daemon=True)
+        listening_thread = threading.Thread(
+            target=voice_loop,
+            kwargs={"one_shot": True, "trigger": "manual"},
+            daemon=True,
+        )
         listening_thread.start()
         
         logger.info("[API] Voice listening started")
@@ -412,16 +424,29 @@ def start_wake_word():
         if wake_word_detector is None:
             # Initialize wake word detector with callback
             from backend.voice_engine.wake_word_detector import WakeWordDetector
-            wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
+            wake_word_detector = WakeWordDetector(
+                callback=on_wake_word_detected,
+                on_state_change=_emit_wake_word_state,
+            )
         
-        if wake_word_detector.is_active:
-            return jsonify({'message': 'Wake word detection already active', 'active': True}), 200
+        if wake_word_detector.status_snapshot().get("active"):
+            return jsonify({'message': 'Wake word detection already active', **wake_word_detector.status_snapshot()}), 200
         
         wake_word_detector.start()
+        time.sleep(0.15)
+        status = wake_word_detector.status_snapshot()
+
+        if not status.get("active"):
+            logger.error(f"[API] Wake word failed to activate: {status}")
+            return jsonify({
+                'error': 'Wake word detection failed to activate',
+                **status,
+            }), 500
+
         logger.info("[API] Wake word detection started")
-        socketio.emit('wake_word_status', {'active': True})
+        _emit_wake_word_state(status)
         
-        return jsonify({'message': 'Wake word detection started', 'active': True})
+        return jsonify({'message': 'Wake word detection started', **status})
     except Exception as e:
         logger.error(f"[API] Error starting wake word detection: {e}", exc_info=True)
         return jsonify({'error': f'Failed to start wake word detection: {str(e)}'}), 500
@@ -439,14 +464,15 @@ def stop_wake_word():
     global wake_word_detector
     
     try:
-        if wake_word_detector is None or not wake_word_detector.is_active:
+        if wake_word_detector is None or not wake_word_detector.status_snapshot().get("active"):
             return jsonify({'message': 'Wake word detection not active', 'active': False}), 200
         
         wake_word_detector.stop()
         logger.info("[API] Wake word detection stopped")
-        socketio.emit('wake_word_status', {'active': False})
+        status = wake_word_detector.status_snapshot()
+        _emit_wake_word_state(status)
         
-        return jsonify({'message': 'Wake word detection stopped', 'active': False})
+        return jsonify({'message': 'Wake word detection stopped', **status})
     except Exception as e:
         logger.error(f"[API] Error stopping wake word detection: {e}", exc_info=True)
         return jsonify({'error': f'Failed to stop wake word detection: {str(e)}'}), 500
@@ -463,14 +489,21 @@ def wake_word_status():
     """
     global wake_word_detector
     
-    is_active = wake_word_detector is not None and wake_word_detector.is_active
-    wake_words = assistant_config.get('wake_word.words', ['otto'])
-    
-    return jsonify({
-        'active': is_active,
-        'wake_words': wake_words,
-        'enabled_in_config': assistant_config.get('wake_word.enabled', False)
-    })
+    status = {
+        'active': False,
+        'configured_active': False,
+        'thread_alive': False,
+        'paused': False,
+        'wake_words': assistant_config.get('wake_word.words', ['otto']),
+        'consecutive_errors': 0,
+        'last_error': '',
+    }
+
+    if wake_word_detector is not None:
+        status.update(wake_word_detector.status_snapshot())
+
+    status['enabled_in_config'] = assistant_config.get('wake_word.enabled', False)
+    return jsonify(status)
 
 
 @app.route('/api/confirm', methods=['POST'])
@@ -1076,13 +1109,20 @@ def handle_connect(auth):
         logger.warning(f"[WebSocket] Authentication failed: {message}")
         return False
 
+    wake_active = False
+    if wake_word_detector is not None:
+        try:
+            wake_active = bool(wake_word_detector.status_snapshot().get("active"))
+        except Exception:
+            wake_active = bool(wake_word_detector.is_active)
+
     _socket_users[request.sid] = socket_user
     logger.info(f"[WebSocket] Client connected: {socket_user['username']} ({request.sid})")
     emit('connection_status', {
         'status': 'connected',
         'listening': is_listening,
         'pending_confirmation': pending_confirmation is not None,
-        'wake_word_active': wake_word_detector is not None and wake_word_detector.is_active
+        'wake_word_active': wake_active
     })
 
 
@@ -1178,11 +1218,28 @@ def on_wake_word_detected(wake_word: str):
     
     # Emit wake word detection event to clients
     socketio.emit('wake_word_detected', {'word': wake_word})
+
+    ack_message = str(assistant_config.get('wake_word.acknowledgement', 'Yes?')).strip() or 'Yes?'
     
     # Start voice listening if not already active
     if not is_listening:
+        # Let user know wake-word activation happened.
+        socketio.emit('command_result', {
+            'status': 'success',
+            'message': ack_message,
+        })
+        try:
+            from backend.voice_engine.audio_pipeline import speak
+            speak(ack_message)
+        except Exception as e:
+            logger.warning(f"[WakeWord] Acknowledgement speak failed: {e}")
+
         is_listening = True
-        listening_thread = threading.Thread(target=voice_loop, daemon=True)
+        listening_thread = threading.Thread(
+            target=voice_loop,
+            kwargs={"one_shot": True, "trigger": "wake_word"},
+            daemon=True,
+        )
         listening_thread.start()
         
         logger.info("[WakeWord] Voice listening started automatically")
@@ -1193,7 +1250,7 @@ def on_wake_word_detected(wake_word: str):
 
 # ============== VOICE LOOP (Background Thread) ==============
 
-def voice_loop():
+def voice_loop(one_shot: bool = True, trigger: str = "manual"):
     """
     Background voice listening loop
     Runs in a separate thread when listening is enabled
@@ -1201,7 +1258,8 @@ def voice_loop():
     """
     global is_listening, pending_confirmation, wake_word_detector
     
-    logger.info('[Voice Loop] Started (Adaptive mode - proximity-favored)')
+    mode = "one-shot" if one_shot else "continuous"
+    logger.info(f"[Voice Loop] Started (Adaptive mode - {mode}, trigger={trigger})")
 
     # Lazy-import voice pipeline so API startup isn't blocked by Whisper/Torch.
     from backend.voice_engine.audio_pipeline import listen_for_gui_adaptive, speak
@@ -1212,15 +1270,39 @@ def voice_loop():
         logger.debug("[Voice Loop] Wake word detection paused during active listening")
     
     ctrl = get_controller()
+    no_input_streak = 0
 
     while is_listening:
         try:
             # Listen for voice input (adaptive mode - stops on silence)
-            text = listen_for_gui_adaptive()
+            text = listen_for_gui_adaptive(should_stop=lambda: not is_listening)
+
+            # Stop can be requested while recorder was still collecting chunks.
+            # Discard any text captured during shutdown to avoid one extra command execution.
+            if not is_listening:
+                logger.info("[Voice Loop] Stop requested - exiting before processing transcript")
+                break
             
             if not text:
-                logger.debug("[Voice Loop] No speech detected in this recording window")
+                no_input_streak += 1
+                logger.debug(f"[Voice Loop] No speech detected (streak={no_input_streak})")
+
+                # One-shot sessions should stop after silence to avoid infinite restart loops.
+                if one_shot:
+                    logger.info("[Voice Loop] One-shot session ended (no speech captured)")
+                    is_listening = False
+                    socketio.emit('command_result', {
+                        'status': 'info',
+                        'message': 'No speech detected. Please click mic and try again.'
+                    })
+                    break
+
+                # Continuous mode: back off a bit to avoid tight retry loops and log spam.
+                time.sleep(min(0.25 * no_input_streak, 1.0))
                 continue
+
+            # Reset silence streak once valid text is captured.
+            no_input_streak = 0
             
             logger.info(f"[Voice Loop] Heard: {text}")
             
@@ -1293,6 +1375,10 @@ def voice_loop():
                 pending_confirmation = result
                 socketio.emit('confirmation_required', result)
                 # Don't speak yet, wait for user confirmation via UI
+                if one_shot:
+                    logger.info("[Voice Loop] One-shot session complete (confirmation required)")
+                    is_listening = False
+                    break
             else:
                 # Get response message
                 response = result.get('message', 'Command processed')
@@ -1307,6 +1393,11 @@ def voice_loop():
                 # This prevents feedback loop where mic captures speaker output
                 logger.debug("[Voice Loop] Pausing to prevent TTS feedback...")
                 time.sleep(1.5)
+
+                if one_shot:
+                    logger.info("[Voice Loop] One-shot session complete")
+                    is_listening = False
+                    break
                 
         except KeyboardInterrupt:
             logger.info("[Voice Loop] Interrupted")
@@ -1386,20 +1477,26 @@ def initialize_wake_word():
     global wake_word_detector
 
     try:
-        autostart_raw = os.environ.get("OMNIASSIST_WAKE_WORD_AUTOSTART", "false").strip().lower()
-        autostart_enabled = autostart_raw in {"1", "true", "yes", "on"}
-        if not autostart_enabled:
-            logger.info('[WakeWord] Startup auto-enable is OFF (set OMNIASSIST_WAKE_WORD_AUTOSTART=true to enable).')
-            return
+        config_enabled = bool(assistant_config.get('wake_word.enabled', False))
+        config_autostart = bool(assistant_config.get('wake_word.autostart', False))
 
-        enabled = bool(assistant_config.get('wake_word.enabled', False))
-        if not enabled:
+        env_override = os.environ.get("OMNIASSIST_WAKE_WORD_AUTOSTART")
+        if env_override is None:
+            autostart_enabled = config_enabled and config_autostart
+        else:
+            env_val = env_override.strip().lower()
+            autostart_enabled = env_val in {"1", "true", "yes", "on"}
+
+        if not autostart_enabled:
             logger.info('[WakeWord] Startup auto-enable is OFF')
             return
 
         if wake_word_detector is None:
             from backend.voice_engine.wake_word_detector import WakeWordDetector
-            wake_word_detector = WakeWordDetector(callback=on_wake_word_detected)
+            wake_word_detector = WakeWordDetector(
+                callback=on_wake_word_detected,
+                on_state_change=_emit_wake_word_state,
+            )
 
         if not wake_word_detector.is_active:
             wake_word_detector.start()
@@ -1408,6 +1505,22 @@ def initialize_wake_word():
             logger.info('[WakeWord] Detection already active at startup.')
     except Exception as e:
         logger.error(f"[WakeWord] Startup initialization error: {e}", exc_info=True)
+
+
+def initialize_controller_warmup():
+    """Warm up controller + LLM in background to reduce first-request latency."""
+    try:
+        if not bool(assistant_config.get('llm.warmup_on_startup', True)):
+            logger.info('[Warmup] LLM startup warmup is OFF')
+            return
+
+        logger.info('[Warmup] Initializing controller and warming up LLM...')
+        ctrl = get_controller()
+        if hasattr(ctrl, 'llm_client') and hasattr(ctrl.llm_client, 'warm_up'):
+            ctrl.llm_client.warm_up()
+        logger.info('[Warmup] Startup warmup complete')
+    except Exception as e:
+        logger.warning(f"[Warmup] Startup warmup failed: {e}")
 
 
 def run_api_service(host='0.0.0.0', port=5000, debug=False):
@@ -1427,6 +1540,7 @@ def run_api_service(host='0.0.0.0', port=5000, debug=False):
     # on some systems/drivers. Run it in the background so the API can bind
     # and the desktop UI can connect even if wake-word init is slow.
     threading.Thread(target=initialize_wake_word, daemon=True).start()
+    threading.Thread(target=initialize_controller_warmup, daemon=True).start()
     
     logger.info(f'API Service starting on http://{host}:{port}')
     logger.info('Available endpoints:')

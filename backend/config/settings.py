@@ -7,17 +7,25 @@ from backend.config.assistant_config import assistant_config
 
 RECORD_DURATION = int(assistant_config.get("recording.record_duration", 4))
 SAMPLE_RATE = int(assistant_config.get("recording.sample_rate", 16000))
+RECORDING_INPUT_DEVICE = assistant_config.get("recording.input_device", None)
+RECORDING_MIN_AUDIO_LEVEL = int(assistant_config.get("recording.min_audio_level_int16", 80))
 
 
 # ==============================
 # Whisper Settings
 # ==============================
 
-WHISPER_MODEL = assistant_config.get("stt.model", "tiny.en")
+WHISPER_MODEL = assistant_config.get("stt.model", "base.en")
 WHISPER_LANGUAGE = assistant_config.get("stt.language", "en")
-WHISPER_BEAM_SIZE = int(assistant_config.get("stt.beam_size", 3))
+WHISPER_BEAM_SIZE = int(assistant_config.get("stt.beam_size", 1))
 WHISPER_BEST_OF = int(assistant_config.get("stt.best_of", 3))
-WHISPER_NO_SPEECH_THRESHOLD = float(assistant_config.get("stt.no_speech_threshold", 0.35))
+WHISPER_NO_SPEECH_THRESHOLD = float(assistant_config.get("stt.no_speech_threshold", 0.45))
+WHISPER_LOG_PROB_THRESHOLD = float(assistant_config.get("stt.log_prob_threshold", -1.1))
+WHISPER_COMPRESSION_RATIO_THRESHOLD = float(assistant_config.get("stt.compression_ratio_threshold", 2.0))
+WHISPER_MIN_AUDIO_RMS = float(assistant_config.get("stt.min_audio_rms", 0.01))
+WHISPER_VAD_MIN_SILENCE_MS = int(assistant_config.get("stt.vad_min_silence_ms", 500))
+WHISPER_MAX_AUDIO_SECONDS = float(assistant_config.get("stt.max_audio_seconds", 8.0))
+FASTER_WHISPER_COMPUTE_TYPE = assistant_config.get("stt.compute_type", "int8")
 WHISPER_INITIAL_PROMPT = assistant_config.get("stt.initial_prompt", "")
 WHISPER_TEXT_CORRECTIONS = dict(assistant_config.get("stt.text_corrections", {}))
 

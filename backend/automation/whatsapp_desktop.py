@@ -1,222 +1,241 @@
-# backend/automation/whatsapp_desktop.py
-
+import re
 import subprocess
 import time
+import urllib.parse
+
 import pyperclip
+
 from backend.automation.base_tool import BaseTool
+from backend.automation.error_handler import (
+    AutomationError,
+    WindowNotFoundError,
+    error_handler,
+)
 from backend.automation.window_detection import window_detector
-from backend.automation.error_handler import error_handler, WindowNotFoundError, AutomationTimeoutError, AutomationError
 from backend.config.logger import logger
 
 
-# =========================
-# REAL AUTOMATION FUNCTION
-# =========================
+WHATSAPP_WINDOW_NAME = "WhatsApp"
 
-def send_whatsapp_message(target: str, message: str):
-    """
-    Send WhatsApp message with proper workflow:
-    1. Open WhatsApp
-    2. Verify window is active
-    3. Search contact via clipboard paste
-    4. Open chat
-    5. Type message via clipboard paste
-    6. Send
-    """
-    import keyboard
-    import pyautogui
 
-    try:
-        # Open WhatsApp
-        logger.info(f"Opening WhatsApp to send message to {target}")
-        subprocess.Popen("start whatsapp:", shell=True)
-        time.sleep(3)
+def _sanitize_phone(raw: str) -> str:
+    """Return digits-only phone number, preserving optional leading '+'."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
 
-        # Wait for WhatsApp window to appear
-        if not window_detector.wait_for_window("WhatsApp", timeout=10):
-            raise WindowNotFoundError(
-                "WhatsApp window not found after opening",
-                "I couldn't find the WhatsApp window. Please make sure WhatsApp is installed and try again."
-            )
+    keep_plus = text.startswith("+")
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if keep_plus and digits:
+        return f"+{digits}"
+    return digits
 
-        time.sleep(2)
 
-        # Ensure WhatsApp window is focused
-        if not window_detector.focus_window("WhatsApp"):
-            logger.warning("Could not focus WhatsApp window, continuing anyway")
+def _looks_like_phone_target(target: str) -> bool:
+    """Treat target as phone number when it has enough digits."""
+    cleaned = _sanitize_phone(target)
+    return len(cleaned.lstrip("+")) >= 8
 
-        time.sleep(0.5)
 
-        # Open search dialog
-        logger.info(f"Searching for contact: {target}")
-        keyboard.press_and_release("ctrl+f")
-        time.sleep(1)
+def _open_whatsapp_protocol(uri: str) -> None:
+    """Open WhatsApp URI via shell."""
+    cmd = f'start "" "{uri}"'
+    subprocess.Popen(cmd, shell=True)
 
-        # Clear any existing search text
-        keyboard.press_and_release("ctrl+a")
-        time.sleep(0.2)
-        keyboard.press_and_release("delete")
-        time.sleep(0.2)
 
-        # Paste contact name via clipboard (handles all characters)
-        pyperclip.copy(target)
-        keyboard.press_and_release("ctrl+v")
-        time.sleep(1.5)
-
-        # Press Enter to open the contact's chat
-        keyboard.press_and_release("enter")
-        time.sleep(2)
-
-        # Press Escape to close search and land in the chat, then Tab to message box
-        keyboard.press_and_release("escape")
-        time.sleep(0.5)
-
-        # Click at bottom-center to focus message input box
-        # Use a relative position: bottom 10% of screen, horizontal center
-        screen_w, screen_h = pyautogui.size()
-        msg_x = screen_w // 2
-        msg_y = int(screen_h * 0.93)
-        logger.info(f"Clicking message input at ({msg_x}, {msg_y})")
-        pyautogui.click(msg_x, msg_y)
-        time.sleep(0.5)
-
-        # Clear any existing text in message box
-        keyboard.press_and_release("ctrl+a")
-        time.sleep(0.2)
-
-        # Paste message via clipboard (handles unicode, emojis, special chars)
-        logger.info(f"Typing message: {message}")
-        pyperclip.copy(message)
-        keyboard.press_and_release("ctrl+v")
-        time.sleep(0.5)
-
-        # Send message
-        logger.info("Sending message...")
-        keyboard.press_and_release("enter")
-        time.sleep(1)
-
-        logger.info(f"Successfully sent WhatsApp message to {target}: '{message}'")
-
-    except (WindowNotFoundError, AutomationTimeoutError) as e:
-        logger.error(f"WhatsApp automation error: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in WhatsApp automation: {e}", exc_info=True)
-        raise AutomationError(
-            str(e),
-            f"Failed to send WhatsApp message: {str(e)}"
+def _wait_for_whatsapp(timeout: int = 12) -> None:
+    if not window_detector.wait_for_window(WHATSAPP_WINDOW_NAME, timeout=timeout):
+        raise WindowNotFoundError(
+            "WhatsApp window not found",
+            "I could not find the WhatsApp window. Please ensure WhatsApp Desktop is installed and running.",
         )
 
 
-# =========================
-# TOOL WRAPPER
-# =========================
+def _focus_whatsapp() -> None:
+    if not window_detector.focus_window(WHATSAPP_WINDOW_NAME):
+        raise WindowNotFoundError(
+            "Could not focus WhatsApp",
+            "WhatsApp opened but I could not bring it to the foreground. Please open WhatsApp and try again.",
+        )
+
+
+def _paste_text(text: str) -> None:
+    import keyboard
+
+    pyperclip.copy(text)
+    keyboard.press_and_release("ctrl+v")
+
+
+def _open_chat_by_contact(contact_name: str) -> None:
+    """Open a chat by searching contact name from WhatsApp global search."""
+    import keyboard
+
+    keyboard.press_and_release("ctrl+k")
+    time.sleep(0.6)  # Wait for search box to appear
+
+    keyboard.press_and_release("ctrl+a")
+    time.sleep(0.15)
+    keyboard.press_and_release("delete")
+    time.sleep(0.15)
+
+    _paste_text(contact_name)
+    time.sleep(1.2)  # Wait for search results to populate
+
+    # Open first likely result.
+    keyboard.press_and_release("down")
+    time.sleep(0.2)
+    keyboard.press_and_release("enter")
+    time.sleep(1.5)  # Wait for chat to load
+
+
+def _send_message_in_active_chat(message: str) -> None:
+    """Send message in the currently open chat using clipboard paste + Enter."""
+    import keyboard
+
+    # Focus composer via common WhatsApp desktop shortcut.
+    time.sleep(0.3)  # Ensure chat fully loaded
+    keyboard.press_and_release("ctrl+shift+m")
+    time.sleep(0.4)  # Wait for composer to focus and be ready
+
+    _paste_text(message)
+    time.sleep(0.2)
+    keyboard.press_and_release("enter")
+    time.sleep(0.5)  # Wait for message to send
+
+
+def send_whatsapp_message(target: str, message: str) -> None:
+    """Send WhatsApp message via desktop automation with contact or phone target."""
+    resolved_target = (target or "").strip()
+    resolved_message = (message or "").strip()
+
+    if not resolved_target:
+        raise AutomationError(
+            "Missing target",
+            "I need a WhatsApp contact or phone number to send the message.",
+        )
+
+    if not resolved_message:
+        raise AutomationError(
+            "Missing message",
+            "I need the message text before I can send it.",
+        )
+
+    logger.info(f"[WhatsApp] Sending message to '{resolved_target}'")
+
+    # Strategy A: phone target via URI deep-link.
+    if _looks_like_phone_target(resolved_target):
+        phone = _sanitize_phone(resolved_target).lstrip("+")
+        encoded = urllib.parse.quote(resolved_message)
+        uri = f"whatsapp://send?phone={phone}&text={encoded}"
+        _open_whatsapp_protocol(uri)
+        _wait_for_whatsapp(timeout=14)
+        _focus_whatsapp()
+        time.sleep(0.9)
+
+        # Some clients prefill text but do not auto-send.
+        import keyboard
+
+        keyboard.press_and_release("enter")
+        logger.info("[WhatsApp] Message dispatched via phone deep-link")
+        return
+
+    # Strategy B: contact search in Desktop app.
+    _open_whatsapp_protocol("whatsapp:")
+    _wait_for_whatsapp(timeout=14)
+    _focus_whatsapp()
+    time.sleep(1.0)  # Give WhatsApp time to fully load UI
+
+    _open_chat_by_contact(resolved_target)
+    _focus_whatsapp()
+    time.sleep(0.3)  # Ensure fresh focus
+    _send_message_in_active_chat(resolved_message)
+
+    logger.info(f"[WhatsApp] Message sent to '{resolved_target}'")
+
 
 class WhatsAppSendTool(BaseTool):
     name = "whatsapp.send"
     description = "Send a message to a WhatsApp contact"
-    risk_level = "medium"
-    requires_confirmation = True
+    risk_level = "low"
+    requires_confirmation = False
 
-    def execute(self, target: str, message: str):
-        """Execute WhatsApp message send with comprehensive error handling"""
-        
+    def execute(self, target: str = None, message: str = None, contact: str = None, data: str = None, body: str = None):
+        resolved_target = (target or contact or "").strip()
+        resolved_message = (message or data or body or "").strip()
+
+        if not resolved_target:
+            return {
+                "status": "error",
+                "message": "Missing WhatsApp contact name or phone number",
+                "data": {"required": ["target/contact", "message/body"]},
+            }
+
+        if not resolved_message:
+            return {
+                "status": "error",
+                "message": "Missing WhatsApp message text",
+                "data": {"required": ["target/contact", "message/body"]},
+            }
+
         def _send():
-            send_whatsapp_message(target, message)
+            send_whatsapp_message(resolved_target, resolved_message)
             return {
                 "status": "success",
-                "message": f"Message sent to {target} on WhatsApp",
-                "data": {"target": target, "message_length": len(message)}
+                "message": f"Message sent to {resolved_target} on WhatsApp",
+                "data": {
+                    "target": resolved_target,
+                    "message_length": len(resolved_message),
+                    "target_type": "phone" if _looks_like_phone_target(resolved_target) else "contact",
+                },
             }
-        
-        # Wrap with error handler for consistent error messages
+
         return error_handler.wrap_automation(
             func=_send,
             operation_name="WhatsApp Send Message",
-            context={"app": "WhatsApp", "target": target}
+            context={"app": "WhatsApp", "target": resolved_target},
         )
 
 
-# Compatibility wrapper used by automation_router
 class WhatsAppDesktop:
-    """High-level interface used by the automation router.
-
-    Methods:
-        open_app() -> bool
-        open_chat(target: str) -> bool
-        send_message(target: str, message: str) -> bool
-    """
+    """Compatibility wrapper used by automation router."""
 
     def open_app(self) -> bool:
-        """Open WhatsApp Desktop application"""
         try:
-            logger.info("Opening WhatsApp Desktop")
-            subprocess.Popen("start whatsapp:", shell=True)
-            time.sleep(2)
-            
-            # Verify it opened
-            if window_detector.wait_for_window("WhatsApp", timeout=8):
-                logger.info("WhatsApp opened successfully")
-                return True
-            else:
-                logger.warning("WhatsApp window not detected")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Failed to open WhatsApp: {e}")
-            return False
-    
-    def open_chat(self, target: str) -> bool:
-        """Open a specific chat in WhatsApp"""
-        try:
-            # Ensure app is open
-            if not window_detector.is_window_active("WhatsApp", timeout=2):
-                logger.info("WhatsApp not open, opening now")
-                if not self.open_app():
-                    return False
-            
-            time.sleep(1)
-            
-            # Focus WhatsApp window
-            window_detector.focus_window("WhatsApp")
-            time.sleep(0.5)
-
-            # Open search and paste contact name via clipboard (handles all chars)
-            import keyboard
-
-            keyboard.press_and_release("ctrl+f")
-            time.sleep(0.5)
-            keyboard.press_and_release("ctrl+a")
-            time.sleep(0.2)
-            keyboard.press_and_release("delete")
-            time.sleep(0.2)
-
-            pyperclip.copy(target)
-            keyboard.press_and_release("ctrl+v")
-
-            time.sleep(0.8)
-            keyboard.press_and_release("enter")
-            time.sleep(1.2)
-            
-            logger.info(f"Opened chat with {target}")
+            _open_whatsapp_protocol("whatsapp:")
+            _wait_for_whatsapp(timeout=10)
+            _focus_whatsapp()
             return True
-            
         except Exception as e:
-            logger.error(f"Failed to open chat: {e}")
+            logger.error(f"[WhatsApp] open_app failed: {e}")
+            return False
+
+    def open_chat(self, target: str) -> bool:
+        try:
+            if _looks_like_phone_target(target):
+                phone = _sanitize_phone(target).lstrip("+")
+                _open_whatsapp_protocol(f"whatsapp://send?phone={phone}")
+                _wait_for_whatsapp(timeout=12)
+                _focus_whatsapp()
+                return True
+
+            if not self.open_app():
+                return False
+
+            _open_chat_by_contact((target or "").strip())
+            return True
+        except Exception as e:
+            logger.error(f"[WhatsApp] open_chat failed: {e}")
             return False
 
     def send_message(self, target: str, message: str) -> bool:
-        """Send a message to a contact"""
         try:
-            # Reuse the lower-level function which handles full flow
             send_whatsapp_message(target, message)
             return True
         except Exception as e:
-            logger.error(f"Failed to send message: {e}")
+            logger.error(f"[WhatsApp] send_message failed: {e}")
             return False
 
 
-# Non-critical tools to open the app or a chat (registered separately)
 class WhatsAppOpenTool(BaseTool):
     name = "whatsapp.open"
     description = "Open WhatsApp Desktop"
@@ -224,28 +243,23 @@ class WhatsAppOpenTool(BaseTool):
     requires_confirmation = False
 
     def execute(self):
-        """Open WhatsApp Desktop with error handling"""
-        
         def _open():
-            w = WhatsAppDesktop()
-            success = w.open_app()
-            
-            if success:
+            desktop = WhatsAppDesktop()
+            if desktop.open_app():
                 return {
                     "status": "success",
                     "message": "WhatsApp opened successfully",
-                    "data": {}
+                    "data": {},
                 }
-            else:
-                raise WindowNotFoundError(
-                    "WhatsApp failed to open",
-                    "I couldn't open WhatsApp. Please make sure it's installed on your computer."
-                )
-        
+            raise WindowNotFoundError(
+                "WhatsApp failed to open",
+                "I could not open WhatsApp. Please ensure it is installed.",
+            )
+
         return error_handler.wrap_automation(
             func=_open,
             operation_name="Open WhatsApp",
-            context={"app": "WhatsApp"}
+            context={"app": "WhatsApp"},
         )
 
 
@@ -256,26 +270,21 @@ class WhatsAppOpenChatTool(BaseTool):
     requires_confirmation = False
 
     def execute(self, target: str):
-        """Open a WhatsApp chat with error handling"""
-        
         def _open_chat():
-            w = WhatsAppDesktop()
-            success = w.open_chat(target)
-            
-            if success:
+            desktop = WhatsAppDesktop()
+            if desktop.open_chat(target):
                 return {
                     "status": "success",
                     "message": f"Opened chat with {target}",
-                    "data": {"target": target}
+                    "data": {"target": target},
                 }
-            else:
-                raise AutomationError(
-                    f"Failed to open chat with {target}",
-                    f"I couldn't open the chat with {target}. Please verify the contact exists in WhatsApp."
-                )
-        
+            raise AutomationError(
+                f"Failed to open chat with {target}",
+                f"I could not open the chat with {target}. Please verify the contact exists in WhatsApp.",
+            )
+
         return error_handler.wrap_automation(
             func=_open_chat,
             operation_name="Open WhatsApp Chat",
-            context={"app": "WhatsApp", "target": target}
+            context={"app": "WhatsApp", "target": target},
         )

@@ -11,6 +11,8 @@ Key improvements over openai-whisper:
 
 import os
 import re
+import threading
+import time
 
 import numpy as np
 import scipy.io.wavfile as wavfile
@@ -25,6 +27,11 @@ from backend.config.settings import (
     WHISPER_LANGUAGE,
     WHISPER_BEAM_SIZE,
     WHISPER_NO_SPEECH_THRESHOLD,
+    WHISPER_LOG_PROB_THRESHOLD,
+    WHISPER_COMPRESSION_RATIO_THRESHOLD,
+    WHISPER_MIN_AUDIO_RMS,
+    WHISPER_VAD_MIN_SILENCE_MS,
+    WHISPER_MAX_AUDIO_SECONDS,
     WHISPER_INITIAL_PROMPT,
     WHISPER_TEXT_CORRECTIONS,
     FASTER_WHISPER_COMPUTE_TYPE,
@@ -34,23 +41,27 @@ from backend.config.settings import (
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 WHISPER_SAMPLE_RATE = 16000
 
+_current_device = DEVICE
+_current_compute_type = FASTER_WHISPER_COMPUTE_TYPE
+
 logger.info(f"faster-whisper running on: {DEVICE} / compute_type={FASTER_WHISPER_COMPUTE_TYPE}")
 
 model: WhisperModel | None = None
+_model_lock = threading.Lock()
 
 
 def load_whisper_model() -> WhisperModel | None:
     """Load and cache the faster-whisper model."""
-    global model
+    global model, _current_device, _current_compute_type
     try:
         model = WhisperModel(
             WHISPER_MODEL,
-            device=DEVICE,
-            compute_type=FASTER_WHISPER_COMPUTE_TYPE,
+            device=_current_device,
+            compute_type=_current_compute_type,
         )
         logger.info(
             f"faster-whisper '{WHISPER_MODEL}' loaded successfully "
-            f"({DEVICE}/{FASTER_WHISPER_COMPUTE_TYPE})"
+            f"({_current_device}/{_current_compute_type})"
         )
     except Exception as e:
         logger.error(f"[faster-whisper Load Error] {e}")
@@ -110,18 +121,96 @@ def _apply_text_corrections(text: str) -> str:
     return corrected
 
 
+def _rms_level(audio_float: np.ndarray) -> float:
+    if audio_float.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(np.square(audio_float, dtype=np.float32))))
+
+
+def _filter_low_confidence_text(
+    segments_list: list,
+    text: str,
+    *,
+    log_prefix: str,
+    log_prob_threshold: float,
+) -> str:
+    if not text:
+        return ""
+    if not segments_list:
+        return ""
+
+    avg_logprob_values = [float(getattr(seg, "avg_logprob", -10.0)) for seg in segments_list]
+    avg_logprob = float(np.mean(avg_logprob_values)) if avg_logprob_values else -10.0
+
+    if avg_logprob < log_prob_threshold:
+        logger.warning(
+            f"{log_prefix} Dropping low-confidence transcript "
+            f"(avg_logprob={avg_logprob:.3f}, threshold={log_prob_threshold})"
+        )
+        return ""
+
+    return text
+
+
+def _clip_audio_for_commands(audio_float: np.ndarray, log_prefix: str) -> np.ndarray:
+    """Cap very long command audio to keep response latency predictable."""
+    max_samples = int(WHISPER_MAX_AUDIO_SECONDS * WHISPER_SAMPLE_RATE)
+    if audio_float.size > max_samples > 0:
+        logger.info(
+            f"{log_prefix} Clipping audio from {audio_float.size / WHISPER_SAMPLE_RATE:.2f}s "
+            f"to {WHISPER_MAX_AUDIO_SECONDS:.2f}s for realtime command processing"
+        )
+        return audio_float[:max_samples]
+    return audio_float
+
+
 # Model is loaded lazily on first transcription call — backend starts instantly.
 # Call load_whisper_model() explicitly if you need pre-warming at startup.
 _model_load_attempted = False
 
 
-def _ensure_model_loaded() -> None:
-    """Load the model once on first use (lazy init)."""
+def _is_cuda_runtime_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "cublas" in msg
+        or "cudnn" in msg
+        or "cuda" in msg
+        or "cannot be loaded" in msg
+    )
+
+
+def _fallback_to_cpu_model(log_prefix: str) -> bool:
+    """Fallback model backend from CUDA to CPU when CUDA runtime libs are missing."""
+    global model, _current_device, _current_compute_type
+
+    if _current_device == "cpu":
+        return False
+
+    logger.warning(f"{log_prefix} CUDA runtime unavailable. Falling back to CPU model.")
+    _current_device = "cpu"
+    _current_compute_type = "int8"
+    model = None
+    return _ensure_model_loaded(force_reload=True)
+
+
+def _ensure_model_loaded(force_reload: bool = False) -> bool:
+    """Load model on first use; block until ready to avoid first-call empty transcriptions."""
     global model, _model_load_attempted
-    if model is None and not _model_load_attempted:
-        _model_load_attempted = True
-        import threading
-        threading.Thread(target=load_whisper_model, daemon=True, name="whisper-loader").start()
+
+    if force_reload:
+        _model_load_attempted = False
+
+    if model is not None:
+        return True
+
+    with _model_lock:
+        if model is not None:
+            return True
+        if not _model_load_attempted or force_reload:
+            _model_load_attempted = True
+            load_whisper_model()
+
+    return model is not None
 
 
 def transcribe_numpy(
@@ -131,6 +220,8 @@ def transcribe_numpy(
     language_override: str | None = None,
     initial_prompt_override: str | None = None,
     apply_corrections: bool = True,
+    min_audio_rms_override: float | None = None,
+    log_prob_threshold_override: float | None = None,
     log_prefix: str = "[faster-whisper]",
 ) -> str:
     """
@@ -144,14 +235,33 @@ def transcribe_numpy(
         sample_rate: Sample rate of the input array (resampled to 16 kHz if needed).
         Other args same as transcribe_audio().
     """
-    _ensure_model_loaded()
-    if model is None:
+    if not _ensure_model_loaded():
         logger.error("[faster-whisper] Model not loaded.")
         return ""
 
     try:
         # Normalise dtype + channels + sample rate
         audio_float, _ = _to_float32_mono(audio_float, sample_rate)
+        audio_float = _clip_audio_for_commands(audio_float, log_prefix)
+
+        min_audio_rms = (
+            min_audio_rms_override
+            if min_audio_rms_override is not None
+            else WHISPER_MIN_AUDIO_RMS
+        )
+        log_prob_threshold = (
+            log_prob_threshold_override
+            if log_prob_threshold_override is not None
+            else WHISPER_LOG_PROB_THRESHOLD
+        )
+
+        rms = _rms_level(audio_float)
+        if rms < min_audio_rms:
+            logger.warning(
+                f"{log_prefix} Audio RMS below threshold "
+                f"({rms:.5f} < {min_audio_rms})"
+            )
+            return ""
 
         if len(audio_float) < WHISPER_SAMPLE_RATE * 0.3:
             logger.warning(f"{log_prefix} Audio too short, skipping.")
@@ -164,19 +274,30 @@ def transcribe_numpy(
             else WHISPER_INITIAL_PROMPT
         ) or None
 
+        t0 = time.perf_counter()
         segments, info = model.transcribe(
             audio_float,
             beam_size=WHISPER_BEAM_SIZE,
             language=language,
             initial_prompt=initial_prompt,
             no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
+            log_prob_threshold=log_prob_threshold,
+            compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
             vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 300},
+            vad_parameters={"min_silence_duration_ms": WHISPER_VAD_MIN_SILENCE_MS},
             condition_on_previous_text=False,
             temperature=0.0,
         )
 
-        text = "".join(seg.text for seg in segments).strip()
+        segments_list = list(segments)
+        logger.info(f"{log_prefix} Decode completed in {time.perf_counter() - t0:.2f}s")
+        text = "".join(seg.text for seg in segments_list).strip()
+        text = _filter_low_confidence_text(
+            segments_list,
+            text,
+            log_prefix=log_prefix,
+            log_prob_threshold=log_prob_threshold,
+        )
         if apply_corrections:
             text = _apply_text_corrections(text)
 
@@ -186,6 +307,18 @@ def transcribe_numpy(
         return text
 
     except Exception as e:
+        if _is_cuda_runtime_error(e) and _fallback_to_cpu_model(log_prefix):
+            logger.info(f"{log_prefix} Retrying transcription on CPU backend")
+            return transcribe_numpy(
+                audio_float,
+                sample_rate,
+                language_override=language_override,
+                initial_prompt_override=initial_prompt_override,
+                apply_corrections=apply_corrections,
+                min_audio_rms_override=min_audio_rms_override,
+                log_prob_threshold_override=log_prob_threshold_override,
+                log_prefix=log_prefix,
+            )
         import traceback
         logger.error(f"{log_prefix} Transcription error: {e}")
         logger.error(f"{log_prefix} {traceback.format_exc()}")
@@ -198,6 +331,8 @@ def transcribe_audio(
     language_override: str | None = None,
     initial_prompt_override: str | None = None,
     apply_corrections: bool = True,
+    min_audio_rms_override: float | None = None,
+    log_prob_threshold_override: float | None = None,
     log_prefix: str = "[faster-whisper]",
 ) -> str:
     """
@@ -215,8 +350,7 @@ def transcribe_audio(
     Returns:
         Transcribed text or empty string on failure.
     """
-    _ensure_model_loaded()
-    if model is None:
+    if not _ensure_model_loaded():
         logger.error("[faster-whisper] Model not loaded.")
         return ""
 
@@ -236,6 +370,26 @@ def transcribe_audio(
         # --- load & preprocess ---
         sample_rate, audio_data = wavfile.read(audio_path)
         audio_float, _ = _to_float32_mono(audio_data, sample_rate)
+        audio_float = _clip_audio_for_commands(audio_float, log_prefix)
+
+        min_audio_rms = (
+            min_audio_rms_override
+            if min_audio_rms_override is not None
+            else WHISPER_MIN_AUDIO_RMS
+        )
+        log_prob_threshold = (
+            log_prob_threshold_override
+            if log_prob_threshold_override is not None
+            else WHISPER_LOG_PROB_THRESHOLD
+        )
+
+        rms = _rms_level(audio_float)
+        if rms < min_audio_rms:
+            logger.warning(
+                f"{log_prefix} Audio RMS below threshold "
+                f"({rms:.5f} < {min_audio_rms})"
+            )
+            return ""
 
         # --- silence guard: skip clips that are too short ---
         if len(audio_float) < WHISPER_SAMPLE_RATE * 0.3:
@@ -253,20 +407,31 @@ def transcribe_audio(
         ) or None  # faster-whisper wants None, not ""
 
         # --- transcribe ---
+        t0 = time.perf_counter()
         segments, info = model.transcribe(
             audio_float,
             beam_size=WHISPER_BEAM_SIZE,
             language=language,
             initial_prompt=initial_prompt,
             no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
+            log_prob_threshold=log_prob_threshold,
+            compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
             vad_filter=True,          # skip silent regions → fewer hallucinations
-            vad_parameters={"min_silence_duration_ms": 300},
+            vad_parameters={"min_silence_duration_ms": WHISPER_VAD_MIN_SILENCE_MS},
             condition_on_previous_text=False,
             temperature=0.0,
         )
 
         # segments is a generator — consume it
-        text = "".join(seg.text for seg in segments).strip()
+        segments_list = list(segments)
+        logger.info(f"{log_prefix} Decode completed in {time.perf_counter() - t0:.2f}s")
+        text = "".join(seg.text for seg in segments_list).strip()
+        text = _filter_low_confidence_text(
+            segments_list,
+            text,
+            log_prefix=log_prefix,
+            log_prob_threshold=log_prob_threshold,
+        )
 
         if apply_corrections:
             text = _apply_text_corrections(text)
@@ -278,6 +443,17 @@ def transcribe_audio(
         logger.error(f"{log_prefix} File not found: {audio_path} — {e}")
         return ""
     except Exception as e:
+        if _is_cuda_runtime_error(e) and _fallback_to_cpu_model(log_prefix):
+            logger.info(f"{log_prefix} Retrying transcription on CPU backend")
+            return transcribe_audio(
+                audio_path,
+                language_override=language_override,
+                initial_prompt_override=initial_prompt_override,
+                apply_corrections=apply_corrections,
+                min_audio_rms_override=min_audio_rms_override,
+                log_prob_threshold_override=log_prob_threshold_override,
+                log_prefix=log_prefix,
+            )
         import traceback
         logger.error(f"{log_prefix} Transcription error: {e}")
         logger.error(f"{log_prefix} {traceback.format_exc()}")

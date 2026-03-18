@@ -337,6 +337,36 @@ class TestMultiExecutor:
         assert results[0]["status"] == "confirmation_required"
         assert results[0]["tool_name"] == "system.sleep"
 
+    def test_multi_executor_auto_executes_non_destructive_message_tools(self):
+        """Messaging tools should run directly when they are not marked destructive."""
+        from backend.core.tool_registry import ToolRegistry
+        from backend.core.multi_executor import MultiExecutor
+        from backend.automation.base_tool import BaseTool
+
+        class WhatsAppTool(BaseTool):
+            name = "whatsapp.send"
+            description = "Send WhatsApp message"
+            risk_level = "low"
+            requires_confirmation = False
+
+            def execute(self, target=None, message=None):
+                return {"status": "success", "message": "sent", "data": {"target": target, "message": message}}
+
+        registry = ToolRegistry()
+        registry.register(WhatsAppTool())
+        multi_executor = MultiExecutor(registry)
+
+        plan = {
+            "steps": [
+                {"tool": "whatsapp.send", "args": {"target": "john", "message": "hello"}}
+            ]
+        }
+
+        results = multi_executor.execute(plan)
+
+        assert len(results) == 1
+        assert results[0]["status"] == "success"
+
 
 class TestToolRegistration:
     """Test complete tool registration system."""

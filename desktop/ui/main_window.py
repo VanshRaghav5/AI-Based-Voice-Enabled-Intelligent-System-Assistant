@@ -9,6 +9,7 @@ from desktop.core.event_bus import EventBus
 from desktop.services.api_client import ApiClient
 from desktop.services.session_store import SessionStore
 from desktop.services.socket_client import SocketClient
+from desktop.ui.login_dialog import LoginDialog
 from desktop.ui.conversation_view import ConversationView
 from desktop.ui.execution_timeline import ExecutionTimeline
 from desktop.ui.orb_visualizer import OrbVisualizer
@@ -67,7 +68,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.bus = bus
         self._workers = []
         self._system_health = {"backend": False, "voice": False, "llm": None}
+        self._wake_word_active = False
         self._is_quitting = False
+        self._reauth_in_progress = False
 
         self.setWindowTitle("OmniAssist V2")
         self.resize(1100, 740)
@@ -239,6 +242,13 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
         self.btn_settings.clicked.connect(self._open_settings)
+
+        self.btn_wake = QtWidgets.QPushButton("Wake Word: OFF")
+        self.btn_wake.setFixedHeight(32)
+        self.btn_wake.setMinimumWidth(130)
+        self.btn_wake.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.btn_wake.clicked.connect(self._toggle_wake_word)
+        self._update_wake_word_button(False)
         
         # Profile Button (icon-based user area entry)
         _username = "User"
@@ -286,6 +296,8 @@ class MainWindow(QtWidgets.QMainWindow):
         top_bar.addStretch()
         top_bar.addWidget(self.lbl_assistant_state)
         top_bar.addSpacing(12)
+        top_bar.addWidget(self.btn_wake)
+        top_bar.addSpacing(8)
         top_bar.addWidget(self.btn_settings)
         top_bar.addSpacing(8)
         top_bar.addWidget(self.btn_profile)
@@ -371,10 +383,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.bus.confirmation_result.connect(self._on_confirmation_result)
         self.bus.listening_status.connect(self._on_listening_status)
         self.bus.voice_input.connect(self._on_voice_input)
+        self.bus.wake_word_status.connect(self._on_wake_word_status)
+        self.bus.wake_word_detected.connect(self._on_wake_word_detected)
         self.conversation.suggestions.suggestion_clicked.connect(self._on_suggestion_clicked)
 
         # Initial health checks (best-effort)
         ok, health = self.api.health()
+        self._refresh_wake_word_status()
 
         self._set_state(AssistantState.IDLE)
 
@@ -752,10 +767,20 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_rest_result(self, payload: dict):
         # REST response is redundant with socket command_result, but acts as fallback.
         status = payload.get("status")
+        code = str(payload.get("code") or "").lower()
+        msg = str(payload.get("message") or "")
+
+        if code == "unauthorized":
+            self._handle_unauthorized(msg or "Session expired. Please sign in again.")
+            return
+
         if status == "confirmation_required":
             self._set_state(AssistantState.WAITING_CONFIRMATION)
         elif status == "error":
             self._set_state(AssistantState.ERROR)
+            if msg:
+                self.conversation.add_system(f"Error: {msg}")
+                self._notify_user(msg, force_status="error")
         else:
             self._set_state(AssistantState.RESPONDING)
 
@@ -765,6 +790,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._system_health["backend"] = bool(payload.get("status") in ["connected", "ok"] or payload.get("connected"))
         self._system_health["voice"] = bool(payload.get("listening"))
         self._system_health["llm"] = payload.get("llm")
+        if "wake_word_active" in payload:
+            self._update_wake_word_button(bool(payload.get("wake_word_active")))
         self.lbl_assistant_state.setToolTip(
             f"backend={self._system_health['backend']}, "
             f"voice={self._system_health['voice']}, "
@@ -803,9 +830,41 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot(dict)
     def _on_error(self, data: dict):
         msg = (data or {}).get("message") or str(data)
+        code = str((data or {}).get("code") or "").lower()
+        if code == "unauthorized":
+            self._handle_unauthorized(msg or "Session expired. Please sign in again.")
+            return
         self.conversation.add_system(f"Error: {msg}")
         self._set_state(AssistantState.ERROR)
         self._notify_user(msg, force_status="error")
+
+    def _handle_unauthorized(self, message: str) -> None:
+        if self._reauth_in_progress:
+            return
+
+        self._reauth_in_progress = True
+        try:
+            try:
+                self.socket.disconnect()
+            except Exception:
+                pass
+
+            if hasattr(self.session, "clear"):
+                self.session.clear()
+
+            self.conversation.add_system(message)
+            self._notify_user(message, force_status="warning")
+            self._set_state(AssistantState.ERROR)
+
+            dlg = LoginDialog(api=self.api, parent=self)
+            if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+                self.socket.connect()
+                self._set_state(AssistantState.IDLE)
+                self.conversation.add_assistant("Session restored. You can continue.")
+            else:
+                self.close()
+        finally:
+            self._reauth_in_progress = False
 
     @QtCore.Slot(dict)
     def _on_confirmation_required(self, data: dict):
@@ -886,6 +945,61 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = ProfileDialog(self.api, self.session, self)
         dlg.exec()
 
+    def _update_wake_word_button(self, active: bool) -> None:
+        self._wake_word_active = bool(active)
+        if self._wake_word_active:
+            self.btn_wake.setText("Wake Word: ON")
+            self.btn_wake.setToolTip("Wake-word detector is active")
+            self.btn_wake.setStyleSheet(
+                """
+                QPushButton {
+                    background: #163321;
+                    color: #86efac;
+                    font-size: 13px;
+                    font-weight: 700;
+                    border-radius: 16px;
+                    border: 1px solid #22c55e;
+                    padding: 0 12px;
+                }
+                QPushButton:hover {
+                    background: #1a472b;
+                    color: #bbf7d0;
+                }
+                """
+            )
+        else:
+            self.btn_wake.setText("Wake Word: OFF")
+            self.btn_wake.setToolTip("Click to activate wake-word detector")
+            self.btn_wake.setStyleSheet(
+                """
+                QPushButton {
+                    background: #2f2430;
+                    color: #fda4af;
+                    font-size: 13px;
+                    font-weight: 700;
+                    border-radius: 16px;
+                    border: 1px solid #ef4444;
+                    padding: 0 12px;
+                }
+                QPushButton:hover {
+                    background: #3b2a3c;
+                    color: #fecdd3;
+                }
+                """
+            )
+
+    def _refresh_wake_word_status(self) -> None:
+        worker = _WakeWordStatusWorker(self.api)
+        worker.result.connect(self._on_wake_word_status_result)
+        self._workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._cleanup_worker(w))
+        worker.start()
+
+    @QtCore.Slot(dict)
+    def _on_wake_word_status_result(self, payload: dict) -> None:
+        active = bool((payload or {}).get("active"))
+        self._update_wake_word_button(active)
+
     def _personalize_assistant_message(self, message: str) -> str:
         username = ""
         try:
@@ -952,15 +1066,57 @@ class MainWindow(QtWidgets.QMainWindow):
         if text:
             self.conversation.add_system(f"Heard: {text}")
 
+    @QtCore.Slot(dict)
+    def _on_wake_word_status(self, data: dict):
+        self._update_wake_word_button(bool((data or {}).get("active")))
+
+    @QtCore.Slot(dict)
+    def _on_wake_word_detected(self, data: dict):
+        word = str((data or {}).get("word") or "wake word")
+        self.conversation.add_system(f"Wake word detected: {word}")
+
     @QtCore.Slot()
     def _toggle_listen(self):
-        # Toggle via REST; backend will emit listening_status.
-        ok, status = self.api.get_status()
-        listening = bool(status.get("listening")) if ok and isinstance(status, dict) else False
-        if listening:
-            self.api.stop_listening()
+        self.btn_voice.setEnabled(False)
+        worker = _ListenToggleWorker(self.api)
+        worker.result.connect(self._on_listen_toggled)
+        self._workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._cleanup_worker(w))
+        worker.start()
+
+    @QtCore.Slot(dict)
+    def _on_listen_toggled(self, payload: dict):
+        self.btn_voice.setEnabled(True)
+        ok = bool((payload or {}).get("ok"))
+        if not ok:
+            message = str((payload or {}).get("message") or "Unable to toggle listening right now")
+            self.conversation.add_system(f"Error: {message}")
+            self._notify_user(message, force_status="warning")
+
+    @QtCore.Slot()
+    def _toggle_wake_word(self):
+        self.btn_wake.setEnabled(False)
+        worker = _WakeWordToggleWorker(self.api, should_start=not self._wake_word_active)
+        worker.result.connect(self._on_wake_word_toggled)
+        self._workers.append(worker)
+        worker.finished.connect(lambda w=worker: self._cleanup_worker(w))
+        worker.start()
+
+    @QtCore.Slot(dict)
+    def _on_wake_word_toggled(self, payload: dict):
+        self.btn_wake.setEnabled(True)
+        active = bool((payload or {}).get("active"))
+        ok = bool((payload or {}).get("ok"))
+
+        if ok:
+            self._update_wake_word_button(active)
+            state_text = "enabled" if active else "disabled"
+            self.conversation.add_system(f"Wake word {state_text}.")
         else:
-            self.api.start_listening()
+            message = str((payload or {}).get("message") or "Failed to toggle wake word")
+            self.conversation.add_system(f"Error: {message}")
+            self._notify_user(message, force_status="warning")
+            self._refresh_wake_word_status()
 
 
 class _CommandWorker(QtCore.QThread):
@@ -974,7 +1130,28 @@ class _CommandWorker(QtCore.QThread):
     def run(self):
         try:
             resp = self.api.process_command(self.command)
-            payload = resp.json() if resp.content else {}
+            try:
+                payload = resp.json() if resp.content else {}
+            except Exception:
+                payload = {}
+
+            if resp.status_code == 401:
+                try:
+                    self.api.session.clear()
+                except Exception:
+                    pass
+                self.result.emit({
+                    "status": "error",
+                    "code": "unauthorized",
+                    "message": (payload.get("message") if isinstance(payload, dict) else "") or "Session expired. Please sign in again.",
+                })
+                return
+
+            if resp.status_code >= 400:
+                err_msg = (payload.get("message") if isinstance(payload, dict) else "") or f"Command failed with HTTP {resp.status_code}"
+                self.result.emit({"status": "error", "message": err_msg})
+                return
+
             self.result.emit(payload if isinstance(payload, dict) else {"status": "success", "message": str(payload)})
         except Exception as exc:
             self.result.emit({"status": "error", "message": str(exc)})
@@ -995,3 +1172,58 @@ class _ConfirmWorker(QtCore.QThread):
             self.result.emit(payload)
         except Exception as exc:
             self.result.emit({"status": "error", "message": str(exc)})
+
+
+class _WakeWordStatusWorker(QtCore.QThread):
+    result = QtCore.Signal(dict)
+
+    def __init__(self, api: ApiClient):
+        super().__init__()
+        self.api = api
+
+    def run(self):
+        try:
+            ok, data = self.api.wake_word_status()
+            payload = data if isinstance(data, dict) else {}
+            payload["ok"] = ok
+            self.result.emit(payload)
+        except Exception as exc:
+            self.result.emit({"ok": False, "active": False, "message": str(exc)})
+
+
+class _WakeWordToggleWorker(QtCore.QThread):
+    result = QtCore.Signal(dict)
+
+    def __init__(self, api: ApiClient, should_start: bool):
+        super().__init__()
+        self.api = api
+        self.should_start = should_start
+
+    def run(self):
+        try:
+            ok = self.api.wake_word_start() if self.should_start else self.api.wake_word_stop()
+            status_ok, status = self.api.wake_word_status()
+            payload = status if isinstance(status, dict) else {}
+            payload["ok"] = bool(ok and status_ok)
+            if not payload["ok"] and not payload.get("message"):
+                payload["message"] = "Wake-word request was not accepted by backend"
+            self.result.emit(payload)
+        except Exception as exc:
+            self.result.emit({"ok": False, "active": False, "message": str(exc)})
+
+
+class _ListenToggleWorker(QtCore.QThread):
+    result = QtCore.Signal(dict)
+
+    def __init__(self, api: ApiClient):
+        super().__init__()
+        self.api = api
+
+    def run(self):
+        try:
+            ok, status = self.api.get_status()
+            listening = bool(status.get("listening")) if ok and isinstance(status, dict) else False
+            toggle_ok = self.api.stop_listening() if listening else self.api.start_listening()
+            self.result.emit({"ok": bool(toggle_ok)})
+        except Exception as exc:
+            self.result.emit({"ok": False, "message": str(exc)})

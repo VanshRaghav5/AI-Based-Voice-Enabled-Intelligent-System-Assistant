@@ -9,8 +9,8 @@ from email.message import EmailMessage
 class EmailSendTool(BaseTool):
     name = "email.send"
     description = "Send an email to a recipient"
-    risk_level = "high"
-    requires_confirmation = True
+    risk_level = "medium"
+    requires_confirmation = False
 
     def execute(self, recipient: str, subject: str = "", body: str = ""):
         """Send an email using SMTP with comprehensive error handling.
