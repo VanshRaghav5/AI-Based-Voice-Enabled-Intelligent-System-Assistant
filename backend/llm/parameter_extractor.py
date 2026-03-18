@@ -124,6 +124,26 @@ class ParameterExtractor:
         """Extract WhatsApp message parameters."""
         params = {}
         confidence = 0.3
+
+        # Strong natural-language pattern first (works without quotes).
+        # Examples:
+        # - send testing to vansh on whatsapp
+        # - send message testing to vansh
+        natural = re.search(
+            r'\bsend\s+(.+?)\s+(?:to|for)\s+([A-Za-z0-9@._\-\s]+?)(?:\s+on\s+whats?\s*app|$)',
+            command,
+            re.IGNORECASE,
+        )
+        if natural:
+            msg = natural.group(1).strip(" .,!?'\"")
+            msg = re.sub(r'^(?:message|msg|text)\s+', '', msg, flags=re.IGNORECASE).strip(" .,!?")
+            contact = natural.group(2).strip(" .,!?'\"")
+            if msg:
+                params["message"] = msg
+            if contact:
+                params["contact"] = contact
+            if "message" in params and "contact" in params:
+                return params, 0.92
         
         # Try different patterns
         for pattern in self.WHATSAPP_PATTERNS:

@@ -69,14 +69,16 @@ def execute(command: dict) -> dict:
 
 
         elif intent == "open_whatsapp_chat":
-            whatsapp.open_app()
-            whatsapp.open_chat(target)
-            return {"status": "success", "message": f"Opening chat with {target}"}
+            success = whatsapp.open_chat(target)
+            if success:
+                return {"status": "success", "message": f"Opening chat with {target}"}
+            return {"status": "error", "message": f"Could not open chat with {target}"}
 
         elif intent == "send_whatsapp":
-            whatsapp.open_app()
-            whatsapp.send_message(target, data)
-            return {"status": "success", "message": f"Message sent to {target}"}
+            success = whatsapp.send_message(target, data)
+            if success:
+                return {"status": "success", "message": f"Message sent to {target}"}
+            return {"status": "error", "message": f"Failed to send message to {target}"}
 
 
 
