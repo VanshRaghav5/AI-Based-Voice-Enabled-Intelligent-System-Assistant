@@ -184,6 +184,19 @@ class TestParameterExtractionEdgeCases:
         assert "message" in params
         # Confidence should be lower without contact
         assert confidence < 0.9
+
+    def test_extract_unquoted_whatsapp_message_and_contact(self):
+        """Unquoted WhatsApp command should keep message/contact separated."""
+        from backend.llm.parameter_extractor import parameter_extractor
+
+        params, confidence = parameter_extractor.extract(
+            "send testing to vansh on whatsapp",
+            "whatsapp.send"
+        )
+
+        assert params.get("message", "").lower() == "testing"
+        assert params.get("contact", "").lower() == "vansh"
+        assert confidence >= 0.8
     
     def test_normalize_path_converts_slashes(self):
         """Test path normalization converts forward slashes."""
