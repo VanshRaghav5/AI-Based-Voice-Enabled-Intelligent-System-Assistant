@@ -4,17 +4,14 @@ from backend.core import runtime_events
 
 class MultiExecutor:
 
-    # Tools that require confirmation before execution
+    # Truly destructive tools that should always require confirmation.
     CRITICAL_TOOLS = {
-        "whatsapp.send",
-        "email.send",
         "file.delete",
         "folder.delete",
         "system.shutdown",
         "system.restart",
         "system.sleep",
         "system.hibernate",
-        "file.move",
     }
 
     def __init__(self, registry):
@@ -61,6 +58,14 @@ class MultiExecutor:
             },
         )
 
+    def _requires_confirmation(self, tool_name: str, tool) -> bool:
+        """Return whether this step should pause for explicit user confirmation."""
+        if tool_name in self.CRITICAL_TOOLS:
+            return True
+        if tool is None:
+            return False
+        return bool(getattr(tool, "requires_confirmation", False))
+
     def execute(self, plan):
         """Execute a plan (either object with .steps or dict with 'steps' key).
         
@@ -104,8 +109,11 @@ class MultiExecutor:
             step_desc = self._format_step_desc(tool_name, tool_args)
             self._emit_step(step_num, step_desc, "running")
 
-            # Check if this is a critical tool requiring confirmation
-            if tool_name in self.CRITICAL_TOOLS:
+            tool = self.registry.get(tool_name)
+
+            # Global confirmation policy: destructive tools always confirm,
+            # others follow per-tool requires_confirmation flag.
+            if self._requires_confirmation(tool_name, tool):
                 logger.warning(f"[MultiExecutor] CRITICAL TOOL: {tool_name} requires confirmation")
                 
                 # Build confirmation message
@@ -144,8 +152,6 @@ class MultiExecutor:
                 # Keep execution_step status compatible with existing UIs.
                 # (V1 shows 🔹 for non-success; V2 uses confirmation_required event for blocking UI.)
                 break  # Stop and wait for confirmation
-            
-            tool = self.registry.get(tool_name)
 
             if not tool:
                 results.append({
@@ -221,8 +227,10 @@ class MultiExecutor:
             step_desc = self._format_step_desc(tool_name, tool_args)
             self._emit_step(step_num, step_desc, "running")
 
-            # If a later step is critical, request a new confirmation.
-            if idx > step_index and tool_name in self.CRITICAL_TOOLS:
+            tool = self.registry.get(tool_name)
+
+            # If a later step requires confirmation, request it before executing.
+            if idx > step_index and self._requires_confirmation(tool_name, tool):
                 # Leave the step in a non-terminal state; UI will handle confirmation_required.
                 results.append({
                     "status": "confirmation_required",
@@ -235,7 +243,6 @@ class MultiExecutor:
                 logger.info(f"[MultiExecutor] Additional confirmation required at step #{idx + 1}")
                 break
 
-            tool = self.registry.get(tool_name)
             if not tool:
                 results.append({
                     "status": "error",

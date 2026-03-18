@@ -3,7 +3,7 @@
 from backend.automation.whatsapp_desktop import WhatsAppSendTool, WhatsAppOpenTool, WhatsAppOpenChatTool
 from backend.automation.email_tool import EmailSendTool
 
-from backend.automation.app_launcher import AppLauncherTool
+from backend.automation.app_launcher import AppLauncherTool, NotepadWriteTool
 
 from backend.automation.browser_control import (
     BrowserOpenURLTool,
@@ -87,6 +87,7 @@ def register_all_tools(registry):
 
     # App Launcher
     registry.register(AppLauncherTool())
+    registry.register(NotepadWriteTool())
 
     # Browser Tools
     registry.register(BrowserOpenURLTool())
