@@ -15,13 +15,15 @@ from backend.config.settings import (
     RECORDING_DYNAMIC_SILENCE_MULTIPLIER,
     RECORDING_DYNAMIC_SILENCE_MIN,
     RECORDING_DYNAMIC_SILENCE_MAX,
+    RECORDING_SILENCE_DURATION_SECONDS,
+    RECORDING_INITIAL_LISTEN_SECONDS,
 )
 
 
 MIN_AUDIO_LEVEL = RECORDING_MIN_AUDIO_LEVEL  # RMS threshold; below this is considered silence
 SILENCE_THRESHOLD = max(140, int(MIN_AUDIO_LEVEL * 2))  # Speech gate tuned for typical laptop mic RMS
-SILENCE_DURATION = 1.0  # Seconds of silence before stopping recording
-INITIAL_LISTEN_TIME = 1.8  # Give user more time to start speaking
+SILENCE_DURATION = max(0.3, float(RECORDING_SILENCE_DURATION_SECONDS))
+INITIAL_LISTEN_TIME = max(0.6, float(RECORDING_INITIAL_LISTEN_SECONDS))
 
 _INPUT_DEVICE_LOGGED = False
 
