@@ -3,6 +3,7 @@ import time
 
 from backend.voice_engine.input.recorder import record_audio_while_held, record_audio_fixed, record_audio_until_silence
 from backend.config.logger import logger
+from backend.config.settings import VOICE_ADAPTIVE_MAX_DURATION_SECONDS, VOICE_ADAPTIVE_CHUNK_SECONDS
 
 try:
     from backend.voice_engine.stt.faster_whisper_engine import transcribe_audio
@@ -122,8 +123,8 @@ def listen_for_gui_adaptive(should_stop=None) -> str:
         
         # Record audio until silence is detected
         audio_path = record_audio_until_silence(
-            max_duration=8.0,
-            chunk_size=0.05,
+            max_duration=VOICE_ADAPTIVE_MAX_DURATION_SECONDS,
+            chunk_size=VOICE_ADAPTIVE_CHUNK_SECONDS,
             should_stop=should_stop,
         )
         

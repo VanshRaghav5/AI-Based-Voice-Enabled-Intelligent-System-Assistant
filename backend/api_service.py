@@ -62,6 +62,7 @@ from backend.core import runtime_events
 from backend.config.logger import logger
 from backend.core.persona import persona
 from backend.config.assistant_config import assistant_config
+from backend.config.settings import VOICE_RESPONSE_COOLDOWN_SECONDS
 from backend.auth.auth_service import AuthService, PasswordHasher
 from backend.middleware.auth_middleware import login_required, admin_required
 from backend.middleware.validation import (
@@ -173,7 +174,7 @@ def get_controller() -> "AssistantController":
 
 # Cache for recent commands to avoid duplicate processing
 _command_cache = {}
-_cache_timeout = 1.0  # 1 second cache for duplicate commands
+_cache_timeout = 4.0  # short-term cache for duplicate commands
 _socket_users: Dict[str, Dict[str, Any]] = {}
 
 
@@ -305,6 +306,19 @@ def process_command():
     
     try:
         logger.info(f"[API] Processing command: {command}")
+
+        cache_key = f"{command.lower().strip()}::{(language or '').lower()}"
+        now = time.time()
+        cached = _command_cache.get(cache_key)
+        if cached and (now - cached.get("ts", 0.0)) <= _cache_timeout:
+            cached_result = dict(cached.get("result", {}))
+            if cached_result:
+                cached_result.setdefault("data", {})
+                if isinstance(cached_result["data"], dict):
+                    cached_result["data"]["served_from"] = "command_cache"
+                logger.info("[API] Returning cached command result")
+                socketio.emit('command_result', cached_result)
+                return jsonify(cached_result)
         
         # Check for exit commands
         normalized = command.lower().strip()
@@ -327,6 +341,7 @@ def process_command():
         # Don't duplicate LLM calls - let controller handle plan generation
         # Process the command (this handles plan generation internally)
         result = get_controller().process(command, language=language)
+        _command_cache[cache_key] = {"ts": now, "result": result}
 
         # Step progress is emitted in real-time by MultiExecutor via runtime_events.
         
@@ -1419,16 +1434,16 @@ def voice_loop(one_shot: bool = True, trigger: str = "manual"):
                 # Get response message
                 response = result.get('message', 'Command processed')
                 
-                # Speak the response
-                speak(response)
-                
                 # Send result to clients
                 socketio.emit('command_result', result)
+
+                # Speak the response after result emission for faster UI feedback
+                speak(response)
                 
                 # Wait after speaking to prevent microphone from picking up TTS audio
                 # This prevents feedback loop where mic captures speaker output
                 logger.debug("[Voice Loop] Pausing to prevent TTS feedback...")
-                time.sleep(1.5)
+                time.sleep(max(0.2, VOICE_RESPONSE_COOLDOWN_SECONDS))
 
                 if one_shot:
                     logger.info("[Voice Loop] One-shot session complete")
