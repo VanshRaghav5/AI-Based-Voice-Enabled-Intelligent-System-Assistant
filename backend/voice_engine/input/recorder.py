@@ -7,7 +7,15 @@ import tempfile
 import numpy as np
 
 from backend.config.logger import logger
-from backend.config.settings import SAMPLE_RATE, RECORDING_INPUT_DEVICE, RECORDING_MIN_AUDIO_LEVEL
+from backend.config.settings import (
+    SAMPLE_RATE,
+    RECORDING_INPUT_DEVICE,
+    RECORDING_MIN_AUDIO_LEVEL,
+    RECORDING_NOISE_CALIBRATION_SECONDS,
+    RECORDING_DYNAMIC_SILENCE_MULTIPLIER,
+    RECORDING_DYNAMIC_SILENCE_MIN,
+    RECORDING_DYNAMIC_SILENCE_MAX,
+)
 
 
 MIN_AUDIO_LEVEL = RECORDING_MIN_AUDIO_LEVEL  # RMS threshold; below this is considered silence
@@ -53,6 +61,13 @@ def _trim_silence(audio: np.ndarray, threshold: int = SILENCE_THRESHOLD) -> np.n
     start = int(energy_idx[0])
     end = int(energy_idx[-1]) + 1
     return audio[start:end]
+
+
+def _compute_dynamic_silence_threshold(noise_floor_rms: float) -> int:
+    """Adapt speech gate to room noise while keeping safe bounds."""
+    scaled = int(noise_floor_rms * RECORDING_DYNAMIC_SILENCE_MULTIPLIER)
+    baseline = max(SILENCE_THRESHOLD, scaled)
+    return int(np.clip(baseline, RECORDING_DYNAMIC_SILENCE_MIN, RECORDING_DYNAMIC_SILENCE_MAX))
 
 
 def record_audio_fixed(
@@ -124,6 +139,9 @@ def record_audio_until_silence(sample_rate: int = SAMPLE_RATE,
     silence_time = 0.0
     has_spoken = False
     ended_without_speech = False
+    dynamic_threshold = SILENCE_THRESHOLD
+    noise_floor_rms = float(SILENCE_THRESHOLD // 2)
+    noise_calibration_window = max(0.0, RECORDING_NOISE_CALIBRATION_SECONDS)
     chunk_frames = int(chunk_size * sample_rate)
     
     logger.info("[Recorder] Adaptive recording started - waiting for voice...")
@@ -142,14 +160,26 @@ def record_audio_until_silence(sample_rate: int = SAMPLE_RATE,
                 
                 # Calculate RMS to detect speech
                 rms = int(np.sqrt(np.mean(data.astype(np.float32) ** 2)))
+
+                # Calibrate ambient noise floor at session start.
+                if not has_spoken:
+                    should_update_noise_floor = (
+                        total_time <= noise_calibration_window
+                        or rms <= int(noise_floor_rms * 1.8)
+                    )
+                    if should_update_noise_floor:
+                        noise_floor_rms = (0.85 * noise_floor_rms) + (0.15 * float(rms))
+                    dynamic_threshold = _compute_dynamic_silence_threshold(noise_floor_rms)
                 
                 # Check if this is speech or silence
-                if rms > SILENCE_THRESHOLD:
+                if rms > dynamic_threshold:
                     # Speech detected
                     has_spoken = True
                     silence_time = 0.0  # Reset silence counter
                     if total_time > 0.2:  # Don't log every chunk
-                        logger.debug(f"[Recorder] Speech detected (RMS: {rms})")
+                        logger.debug(
+                            f"[Recorder] Speech detected (RMS: {rms}, threshold: {dynamic_threshold})"
+                        )
                 else:
                     # Silence detected
                     silence_time += chunk_size
@@ -179,7 +209,7 @@ def record_audio_until_silence(sample_rate: int = SAMPLE_RATE,
     
     # Concatenate all chunks
     audio = np.concatenate(chunks, axis=0)
-    audio = _trim_silence(audio)
+    audio = _trim_silence(audio, threshold=dynamic_threshold)
     if audio.size == 0:
         logger.warning("[Recorder] Audio was only silence after trimming")
         return ""

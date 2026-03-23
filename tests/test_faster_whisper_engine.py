@@ -138,6 +138,48 @@ class TestApplyTextCorrections:
 
 
 # ---------------------------------------------------------------------------
+# _preprocess_for_noise
+# ---------------------------------------------------------------------------
+
+class TestPreprocessForNoise:
+    """Unit tests for denoise + normalization preprocessing."""
+
+    def setup_method(self):
+        from backend.voice_engine.stt.faster_whisper_engine import _preprocess_for_noise
+        self._fn = _preprocess_for_noise
+
+    def test_empty_audio_passthrough(self):
+        empty = np.array([], dtype=np.float32)
+        result = self._fn(empty)
+        assert result.size == 0
+
+    def test_normalizes_peak_and_removes_dc_bias(self, monkeypatch):
+        from backend.voice_engine.stt import faster_whisper_engine as eng
+        monkeypatch.setattr(eng, "WHISPER_ENABLE_DENOISE", False, raising=False)
+        monkeypatch.setattr(eng, "WHISPER_PREEMPHASIS_ALPHA", 0.0, raising=False)
+        monkeypatch.setattr(eng, "WHISPER_NORMALIZE_TARGET_PEAK", 0.5, raising=False)
+
+        biased = np.array([0.9, 1.0, 0.8, 0.7], dtype=np.float32)
+        result = self._fn(biased)
+
+        assert np.max(np.abs(result)) <= 0.5001
+        assert abs(float(np.mean(result))) < 0.05
+
+    def test_denoise_gate_suppresses_weak_noise(self, monkeypatch):
+        from backend.voice_engine.stt import faster_whisper_engine as eng
+        monkeypatch.setattr(eng, "WHISPER_ENABLE_DENOISE", True, raising=False)
+        monkeypatch.setattr(eng, "WHISPER_DENOISE_NOISE_PERCENTILE", 35.0, raising=False)
+        monkeypatch.setattr(eng, "WHISPER_DENOISE_GATE_MULTIPLIER", 2.0, raising=False)
+        monkeypatch.setattr(eng, "WHISPER_PREEMPHASIS_ALPHA", 0.0, raising=False)
+
+        audio = np.array([0.001, -0.001, 0.002, -0.002, 0.2, -0.25], dtype=np.float32)
+        result = self._fn(audio)
+
+        # Several near-noise-floor samples should be gated to zero.
+        assert int(np.count_nonzero(np.isclose(result, 0.0))) >= 2
+
+
+# ---------------------------------------------------------------------------
 # Model loading
 # ---------------------------------------------------------------------------
 

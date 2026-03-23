@@ -9,6 +9,18 @@ RECORD_DURATION = int(assistant_config.get("recording.record_duration", 4))
 SAMPLE_RATE = int(assistant_config.get("recording.sample_rate", 16000))
 RECORDING_INPUT_DEVICE = assistant_config.get("recording.input_device", None)
 RECORDING_MIN_AUDIO_LEVEL = int(assistant_config.get("recording.min_audio_level_int16", 80))
+RECORDING_NOISE_CALIBRATION_SECONDS = float(
+	assistant_config.get("recording.noise_calibration_seconds", 0.35)
+)
+RECORDING_DYNAMIC_SILENCE_MULTIPLIER = float(
+	assistant_config.get("recording.dynamic_silence_multiplier", 2.6)
+)
+RECORDING_DYNAMIC_SILENCE_MIN = int(
+	assistant_config.get("recording.dynamic_silence_min_int16", 140)
+)
+RECORDING_DYNAMIC_SILENCE_MAX = int(
+	assistant_config.get("recording.dynamic_silence_max_int16", 2200)
+)
 
 
 # ==============================
@@ -28,6 +40,15 @@ WHISPER_MAX_AUDIO_SECONDS = float(assistant_config.get("stt.max_audio_seconds", 
 FASTER_WHISPER_COMPUTE_TYPE = assistant_config.get("stt.compute_type", "int8")
 WHISPER_INITIAL_PROMPT = assistant_config.get("stt.initial_prompt", "")
 WHISPER_TEXT_CORRECTIONS = dict(assistant_config.get("stt.text_corrections", {}))
+WHISPER_ENABLE_DENOISE = bool(assistant_config.get("stt.enable_denoise", True))
+WHISPER_DENOISE_NOISE_PERCENTILE = float(
+	assistant_config.get("stt.denoise_noise_percentile", 20.0)
+)
+WHISPER_DENOISE_GATE_MULTIPLIER = float(
+	assistant_config.get("stt.denoise_gate_multiplier", 1.5)
+)
+WHISPER_PREEMPHASIS_ALPHA = float(assistant_config.get("stt.preemphasis_alpha", 0.97))
+WHISPER_NORMALIZE_TARGET_PEAK = float(assistant_config.get("stt.normalize_target_peak", 0.92))
 
 
 # ==============================
@@ -45,6 +66,10 @@ TTS_LENGTH_SCALE = str(assistant_config.get("tts.length_scale", 0.9))
 TTS_NOISE_SCALE = str(assistant_config.get("tts.noise_scale", 0.667))
 TTS_NOISE_W = str(assistant_config.get("tts.noise_w", 0.8))
 TTS_TIMEOUT_SECONDS = int(assistant_config.get("tts.timeout_seconds", 10))
+TTS_ACTIVE_VOICE = str(assistant_config.get("tts.active_voice", "danny"))
+TTS_ACTIVE_ACCENT = str(assistant_config.get("tts.active_accent", "en_US"))
+TTS_ALLOW_ACCENT_FALLBACK = bool(assistant_config.get("tts.allow_accent_fallback", True))
+TTS_VOICE_CATALOG = dict(assistant_config.get("tts.voice_catalog", {}))
 
 
 # ==============================

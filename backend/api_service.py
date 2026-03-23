@@ -562,6 +562,8 @@ def speak_text():
     """
     data = request.json
     text = data.get('text', '')
+    voice = str(data.get('voice', '')).strip() or None
+    accent = str(data.get('accent', '')).strip() or None
     
     if not text:
         return jsonify({'error': 'No text provided'}), 400
@@ -569,11 +571,11 @@ def speak_text():
     try:
         logger.info(f"[API] Speaking: {text}")
         from backend.voice_engine.audio_pipeline import speak
-        speak(text)
+        speak(text, voice=voice, accent=accent)
         
-        socketio.emit('speech_complete', {'text': text})
+        socketio.emit('speech_complete', {'text': text, 'voice': voice, 'accent': accent})
         
-        return jsonify({'message': 'Speech completed', 'text': text})
+        return jsonify({'message': 'Speech completed', 'text': text, 'voice': voice, 'accent': accent})
     except Exception as e:
         logger.error(f"[API] Error speaking: {e}", exc_info=True)
         return jsonify({
@@ -656,6 +658,33 @@ def update_settings():
             except Exception as e:
                 errors.append(f"language: {str(e)}")
                 logger.error(f"[Settings] Error updating language: {e}", exc_info=True)
+
+        # Update TTS voice profile
+        if 'tts_voice' in data:
+            try:
+                tts_voice = str(data['tts_voice']).strip().lower()
+                success = assistant_config.set('tts.active_voice', tts_voice)
+                if success:
+                    updated.append(f"tts_voice={tts_voice}")
+                    logger.info(f"[Settings] TTS voice updated to: {tts_voice}")
+                else:
+                    errors.append("tts_voice: failed to save to config")
+            except Exception as e:
+                errors.append(f"tts_voice: {str(e)}")
+                logger.error(f"[Settings] Error updating TTS voice: {e}", exc_info=True)
+
+        if 'tts_accent' in data:
+            try:
+                tts_accent = str(data['tts_accent']).strip()
+                success = assistant_config.set('tts.active_accent', tts_accent)
+                if success:
+                    updated.append(f"tts_accent={tts_accent}")
+                    logger.info(f"[Settings] TTS accent updated to: {tts_accent}")
+                else:
+                    errors.append("tts_accent: failed to save to config")
+            except Exception as e:
+                errors.append(f"tts_accent: {str(e)}")
+                logger.error(f"[Settings] Error updating TTS accent: {e}", exc_info=True)
         
         # Update memory
         if 'memory_enabled' in data:
@@ -710,6 +739,8 @@ def update_settings():
             'settings': {
                 'persona': persona.mode,
                 'language': assistant_config.get('stt.language', 'en'),
+                'tts_voice': assistant_config.get('tts.active_voice', 'danny'),
+                'tts_accent': assistant_config.get('tts.active_accent', 'en_US'),
                 'memory_enabled': assistant_config.get('memory.enabled', True),
                 'timezone': assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST')),
                 'primary_email': assistant_config.get('assistant.primary_email', ''),
@@ -738,9 +769,14 @@ def get_settings():
     Returns:
         JSON with current settings
     """
+    from backend.voice_engine.tts.tts_engine import get_available_voices
+
     return jsonify({
         'persona': persona.mode,
         'language': assistant_config.get('stt.language', 'en'),
+        'tts_voice': assistant_config.get('tts.active_voice', 'danny'),
+        'tts_accent': assistant_config.get('tts.active_accent', 'en_US'),
+        'tts_available_voices': get_available_voices(),
         'memory_enabled': assistant_config.get('memory.enabled', True),
         'timezone': assistant_config.get('assistant.timezone', os.environ.get('OMNIASSIST_TIMEZONE', 'IST')),
         'primary_email': assistant_config.get('assistant.primary_email', getattr(request.current_user, 'email', '')),

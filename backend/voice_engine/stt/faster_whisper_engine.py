@@ -35,6 +35,11 @@ from backend.config.settings import (
     WHISPER_INITIAL_PROMPT,
     WHISPER_TEXT_CORRECTIONS,
     FASTER_WHISPER_COMPUTE_TYPE,
+    WHISPER_ENABLE_DENOISE,
+    WHISPER_DENOISE_NOISE_PERCENTILE,
+    WHISPER_DENOISE_GATE_MULTIPLIER,
+    WHISPER_PREEMPHASIS_ALPHA,
+    WHISPER_NORMALIZE_TARGET_PEAK,
 )
 
 
@@ -164,6 +169,36 @@ def _clip_audio_for_commands(audio_float: np.ndarray, log_prefix: str) -> np.nda
     return audio_float
 
 
+def _preprocess_for_noise(audio_float: np.ndarray) -> np.ndarray:
+    """Apply lightweight denoise, pre-emphasis, and peak normalization."""
+    if audio_float.size == 0:
+        return audio_float
+
+    processed = np.asarray(audio_float, dtype=np.float32)
+    processed = processed - float(np.mean(processed))
+
+    if WHISPER_ENABLE_DENOISE:
+        percentile = float(np.clip(WHISPER_DENOISE_NOISE_PERCENTILE, 1.0, 50.0))
+        gate_multiplier = max(1.0, float(WHISPER_DENOISE_GATE_MULTIPLIER))
+        noise_floor = float(np.percentile(np.abs(processed), percentile))
+        noise_gate = max(noise_floor * gate_multiplier, 1e-5)
+        processed = np.where(np.abs(processed) < noise_gate, 0.0, processed)
+
+    preemphasis_alpha = float(np.clip(WHISPER_PREEMPHASIS_ALPHA, 0.0, 0.99))
+    if preemphasis_alpha > 0.0 and processed.size > 1:
+        emphasized = np.empty_like(processed)
+        emphasized[0] = processed[0]
+        emphasized[1:] = processed[1:] - (preemphasis_alpha * processed[:-1])
+        processed = emphasized
+
+    target_peak = float(np.clip(WHISPER_NORMALIZE_TARGET_PEAK, 0.1, 1.0))
+    peak = float(np.max(np.abs(processed))) if processed.size else 0.0
+    if peak > 1e-8:
+        processed = (processed / peak) * target_peak
+
+    return np.clip(processed, -1.0, 1.0).astype(np.float32)
+
+
 # Model is loaded lazily on first transcription call — backend starts instantly.
 # Call load_whisper_model() explicitly if you need pre-warming at startup.
 _model_load_attempted = False
@@ -243,6 +278,7 @@ def transcribe_numpy(
         # Normalise dtype + channels + sample rate
         audio_float, _ = _to_float32_mono(audio_float, sample_rate)
         audio_float = _clip_audio_for_commands(audio_float, log_prefix)
+        audio_float = _preprocess_for_noise(audio_float)
 
         min_audio_rms = (
             min_audio_rms_override
@@ -371,6 +407,7 @@ def transcribe_audio(
         sample_rate, audio_data = wavfile.read(audio_path)
         audio_float, _ = _to_float32_mono(audio_data, sample_rate)
         audio_float = _clip_audio_for_commands(audio_float, log_prefix)
+        audio_float = _preprocess_for_noise(audio_float)
 
         min_audio_rms = (
             min_audio_rms_override

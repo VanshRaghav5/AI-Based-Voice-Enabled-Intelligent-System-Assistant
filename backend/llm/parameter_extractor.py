@@ -33,6 +33,11 @@ class ParameterExtractor:
         r'message\s+(.+?)\s+saying\s+["\'](.+?)["\']',
         r'whatsapp\s+(.+?)\s+["\'](.+?)["\']',
     ]
+
+    APP_LAUNCH_STOP_WORDS = {
+        "app", "application", "please", "now", "quickly", "for", "me",
+        "the", "a", "an", "and", "then", "window", "windows",
+    }
     
     def __init__(self):
         """Initialize parameter extractor."""
@@ -49,7 +54,7 @@ class ParameterExtractor:
         Returns:
             Tuple of (extracted_params, confidence_score)
         """
-        command = command.lower().strip()
+        command = str(command or "").strip()
         
         # Route to specific extractor based on tool category
         if tool_name.startswith("file."):
@@ -73,6 +78,7 @@ class ParameterExtractor:
         """Extract file operation parameters."""
         params = {}
         confidence = 0.3  # Base confidence
+        command_lower = command.lower()
         
         # Extract file path
         path = self._extract_path(command)
@@ -81,7 +87,7 @@ class ParameterExtractor:
             confidence += 0.4
         
         # For move/rename operations, extract source and destination
-        if tool_name == "file.move" or "move" in command or "rename" in command:
+        if tool_name == "file.move" or "move" in command_lower or "rename" in command_lower:
             # Try to extract "from X to Y" pattern
             move_match = re.search(r'(?:from|move)\s+(.+?)\s+(?:to|as)\s+(.+?)(?:\s|$)', command)
             if move_match:
@@ -187,12 +193,35 @@ class ParameterExtractor:
         if subject_match:
             params["subject"] = subject_match.group(1)
             confidence += 0.2
+        else:
+            # Unquoted subject until body/message marker or end.
+            subject_unquoted = re.search(
+                r'subject\s+(?:is\s+|:)?(.+?)(?:\s+(?:body|message)\s+|$)',
+                command,
+                re.IGNORECASE,
+            )
+            if subject_unquoted:
+                candidate = subject_unquoted.group(1).strip(" .,!?'\"")
+                if candidate:
+                    params["subject"] = candidate
+                    confidence += 0.15
         
         # Extract body/message
         body_match = re.search(r'(?:body|message)\s+["\'](.+?)["\']', command, re.IGNORECASE)
         if body_match:
             params["body"] = body_match.group(1)
             confidence += 0.2
+        else:
+            body_unquoted = re.search(
+                r'(?:body|message)\s+(?:is\s+|:)?(.+)$',
+                command,
+                re.IGNORECASE,
+            )
+            if body_unquoted:
+                candidate = body_unquoted.group(1).strip(" .,!?'\"")
+                if candidate:
+                    params["body"] = candidate
+                    confidence += 0.15
         
         return params, min(confidence, 1.0)
     
@@ -223,18 +252,40 @@ class ParameterExtractor:
         if url_match:
             params["url"] = url_match.group(1)
             confidence = 0.9
+        else:
+            # Natural phrasing like: "open google.com" or "visit github.com/docs"
+            bare_url_match = re.search(
+                r'\b([a-zA-Z0-9\-]+(?:\.[a-zA-Z0-9\-]+)+(?:/[^\s]*)?)\b',
+                command,
+            )
+            if bare_url_match:
+                value = bare_url_match.group(1).strip(" .,!?'\"")
+                if re.search(r'\.[a-z]{2,}', value, re.IGNORECASE):
+                    params["url"] = value
+                    confidence = max(confidence, 0.85)
         
         # Extract search query
-        search_match = re.search(r'(?:search for|google)\s+["\']?(.+?)["\']?(?:\s|$)', command, re.IGNORECASE)
+        search_match = re.search(r'(?:search for|google)\s+["\']?(.+?)["\']?$', command, re.IGNORECASE)
         if search_match:
-            params["query"] = search_match.group(1).strip()
+            query = search_match.group(1).strip()
+            query = re.sub(r'\s+on\s+(?:google|youtube)\s*$', '', query, flags=re.IGNORECASE)
+            params["query"] = query
             confidence = 0.85
         
         # Extract YouTube query
-        youtube_match = re.search(r'(?:youtube|video)\s+["\']?(.+?)["\']?(?:\s|$)', command, re.IGNORECASE)
+        youtube_match = re.search(r'(?:youtube|video)\s+["\']?(.+?)["\']?$', command, re.IGNORECASE)
         if youtube_match:
-            params["query"] = youtube_match.group(1).strip()
+            query = youtube_match.group(1).strip()
+            query = re.sub(r'\s+on\s+youtube\s*$', '', query, flags=re.IGNORECASE)
+            params["query"] = query
             confidence = 0.85
+
+        # Pattern: "look up python decorators on google"
+        if "query" not in params:
+            lookup_match = re.search(r'(?:look up|find)\s+(.+?)\s+on\s+(?:google|web)', command, re.IGNORECASE)
+            if lookup_match:
+                params["query"] = lookup_match.group(1).strip()
+                confidence = 0.85
         
         return params, min(confidence, 1.0)
     
@@ -242,28 +293,36 @@ class ParameterExtractor:
         """Extract application launch parameters."""
         params = {}
         confidence = 0.5
-        
-        # Extract app name
-        app_match = re.search(r'(?:open|launch|start)\s+([A-Za-z0-9\s]+?)(?:\s|$)', command, re.IGNORECASE)
+
+        # Extract app phrase, allowing multi-word names.
+        app_match = re.search(
+            r'(?:open|launch|start|run)\s+(?:the\s+)?([A-Za-z0-9\s\._-]+?)(?:\s+(?:app|application))?\s*$',
+            command,
+            re.IGNORECASE,
+        )
         if app_match:
-            params["app_name"] = app_match.group(1).strip()
-            confidence = 0.8
+            raw_name = app_match.group(1).strip()
+            tokens = [t for t in raw_name.split() if t.lower() not in self.APP_LAUNCH_STOP_WORDS]
+            app_name = " ".join(tokens).strip()
+            if app_name:
+                params["app_name"] = app_name
+                confidence = 0.85
         
         return params, confidence
     
     def _extract_path(self, command: str) -> Optional[str]:
         """Extract file/folder path from command."""
+        # Prefer quoted paths first so spaces are preserved.
+        quoted_match = re.search(r'["\']([^"\']+)["\']', command)
+        if quoted_match:
+            quoted_path = quoted_match.group(1)
+            if '\\' in quoted_path or '/' in quoted_path:
+                return self._normalize_path(quoted_path)
+
         for pattern in self.FILE_PATH_PATTERNS:
             match = re.search(pattern, command)
             if match:
                 return self._normalize_path(match.group(1))
-        
-        # Try extracting quoted path
-        quoted_match = re.search(r'["\']([^"\']+)["\']', command)
-        if quoted_match:
-            path = quoted_match.group(1)
-            if '\\' in path or '/' in path:
-                return self._normalize_path(path)
         
         return None
     
