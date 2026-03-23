@@ -10,6 +10,7 @@ Orchestrates the full command processing pipeline:
 
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
+import re
 from backend.llm.llm_client import LLMClient
 from backend.llm.parameter_extractor import parameter_extractor
 from backend.llm.parameter_validator import parameter_validator, ValidationResult
@@ -45,6 +46,13 @@ class CommandParser:
     HIGH_CONFIDENCE = 0.8
     MEDIUM_CONFIDENCE = 0.5
     LOW_CONFIDENCE = 0.3
+
+    # Canonicalize equivalent tool names emitted by different planner paths.
+    INTENT_ALIASES = {
+        "app.open": "app.launch",
+        "browser.open_url": "browser.open",
+        "browser.open_youtube": "browser.search_youtube",
+    }
     
     def __init__(self):
         """Initialize command parser."""
@@ -70,6 +78,8 @@ class CommandParser:
         
         # Stage 2: Parameter Extraction
         parameters, extraction_confidence = self.extractor.extract(command, intent)
+        if intent == "unknown":
+            extraction_confidence = 0.0
         logger.info(f"Extracted parameters: {parameters} (confidence: {extraction_confidence:.2f})")
         
         # Combine confidences (weighted average)
@@ -139,11 +149,16 @@ class CommandParser:
         # Extract first tool as primary intent
         first_step = plan["steps"][0]
         intent = first_step.get("tool", "unknown")
+        intent = self._canonicalize_intent(intent)
         
         # Calculate confidence based on multiple factors
         confidence = self._calculate_intent_confidence(command, intent, plan)
         
         return intent, confidence, plan
+
+    def _canonicalize_intent(self, intent: str) -> str:
+        """Map equivalent planner tool names to canonical parser intents."""
+        return self.INTENT_ALIASES.get(intent, intent)
     
     def _calculate_intent_confidence(self, command: str, intent: str, plan: Dict) -> float:
         """
@@ -184,26 +199,33 @@ class CommandParser:
     def _calculate_keyword_match(self, command: str, intent: str) -> float:
         """Calculate keyword match score (0.0 to 1.0)."""
         command_lower = command.lower()
+        intent = self._canonicalize_intent(intent)
+
+        if intent == "browser.open":
+            has_navigation_verb = any(token in command_lower for token in ["open", "visit", "go to", "browse"])
+            has_domain_hint = bool(re.search(r"\b[a-z0-9\-]+\.[a-z]{2,}\b", command_lower))
+            if has_navigation_verb and has_domain_hint:
+                return 1.0
         
         # Define strong keywords for each intent category
         keyword_map = {
-            "file.create": ["create file", "new file", "make file"],
-            "file.delete": ["delete file", "remove file"],
-            "file.open": ["open file", "show file"],
-            "file.move": ["move file", "rename file"],
-            "folder.create": ["create folder", "new folder", "make folder"],
-            "folder.delete": ["delete folder", "remove folder"],
-            "folder.open": ["open folder", "show folder"],
-            "whatsapp.send": ["whatsapp", "send message", "message on whatsapp"],
-            "email.send": ["send email", "email to"],
-            "browser.search_google": ["search", "google"],
-            "browser.search_youtube": ["youtube", "video"],
-            "browser.open": ["open website", "go to", "browse"],
-            "system.volume.up": ["volume up", "increase volume"],
-            "system.volume.down": ["volume down", "decrease volume"],
-            "system.lock": ["lock", "lock computer"],
-            "system.shutdown": ["shutdown", "turn off"],
-            "app.launch": ["open", "launch", "start"],
+            "file.create": ["create file", "new file", "make file", "generate file", "add file"],
+            "file.delete": ["delete file", "remove file", "erase file"],
+            "file.open": ["open file", "show file", "view file", "read file"],
+            "file.move": ["move file", "rename file", "relocate file"],
+            "folder.create": ["create folder", "new folder", "make folder", "create directory"],
+            "folder.delete": ["delete folder", "remove folder", "delete directory"],
+            "folder.open": ["open folder", "show folder", "open directory"],
+            "whatsapp.send": ["whatsapp", "send message", "message on whatsapp", "text on whatsapp"],
+            "email.send": ["send email", "email to", "mail to", "compose email", "draft email"],
+            "browser.search_google": ["search", "google", "look up", "find online", "web search"],
+            "browser.search_youtube": ["youtube", "video", "search youtube", "play on youtube"],
+            "browser.open": ["open website", "go to", "browse", "open url", "visit"],
+            "system.volume.up": ["volume up", "increase volume", "turn up volume", "louder"],
+            "system.volume.down": ["volume down", "decrease volume", "turn down volume", "quieter"],
+            "system.lock": ["lock", "lock computer", "lock pc", "lock screen"],
+            "system.shutdown": ["shutdown", "turn off", "power off"],
+            "app.launch": ["open", "launch", "start", "run", "open app", "launch app"],
         }
         
         keywords = keyword_map.get(intent, [])

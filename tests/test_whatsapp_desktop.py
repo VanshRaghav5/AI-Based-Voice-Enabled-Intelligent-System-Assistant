@@ -104,6 +104,27 @@ class TestAutomationRouterWhatsApp:
         assert "Failed to send" in result["message"]
         mock_open_app.assert_not_called()
 
+    def test_send_whatsapp_surfaces_structured_feedback(self):
+        from backend.automation import automation_router as router
+
+        with patch.object(router.whatsapp, "send_message", return_value=False):
+            with patch.object(
+                router.whatsapp,
+                "get_last_error",
+                return_value={
+                    "error_code": "WHATSAPP_WINDOW_NOT_FOUND",
+                    "message": "I could not find WhatsApp Desktop on screen.",
+                    "recovery_steps": ["Open WhatsApp Desktop and try again."],
+                },
+            ):
+                result = router.execute(
+                    {"intent": "send_whatsapp", "target": "John", "data": "Hello"}
+                )
+
+        assert result["status"] == "error"
+        assert "could not find whatsapp" in result["message"].lower()
+        assert result.get("data", {}).get("error_code") == "WHATSAPP_WINDOW_NOT_FOUND"
+
     def test_open_whatsapp_chat_returns_error_when_open_chat_fails(self):
         from backend.automation import automation_router as router
 
@@ -127,6 +148,21 @@ class TestWhatsAppSendToolSafety:
 
         assert result["status"] == "error"
         assert "same text for contact and message" in result["message"]
+        assert result.get("data", {}).get("error_code") == "WHATSAPP_AMBIGUOUS_INPUT"
+
+    def test_send_tool_returns_structured_feedback_on_wrapped_error(self):
+        from backend.automation.whatsapp_desktop import WhatsAppSendTool
+
+        tool = WhatsAppSendTool()
+        with patch("backend.automation.whatsapp_desktop.send_whatsapp_message", side_effect=Exception("window not found")):
+            result = tool.execute(target="John", message="hello")
+
+        assert result["status"] == "error"
+        assert result.get("data", {}).get("error_code") in {
+            "WHATSAPP_WINDOW_NOT_FOUND",
+            "WHATSAPP_SEND_FAILED",
+        }
+        assert isinstance(result.get("data", {}).get("recovery_steps", []), list)
 
     def test_message_normalization_removes_target_suffix(self):
         from backend.automation.whatsapp_desktop import _normalize_message_for_target
