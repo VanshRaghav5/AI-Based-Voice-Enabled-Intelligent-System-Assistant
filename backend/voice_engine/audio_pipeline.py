@@ -146,8 +146,8 @@ def listen_for_gui_adaptive(should_stop=None) -> str:
         return ""
 
 
-def speak(text: str):
+def speak(text: str, *, voice: str | None = None, accent: str | None = None):
     try:
-        speak_text(text)
+        speak_text(text, voice=voice, accent=accent)
     except Exception as e:
         logger.error(f"[Voice Pipeline Error - Speak] {e}")

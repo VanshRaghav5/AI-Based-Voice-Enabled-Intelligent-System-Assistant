@@ -21,6 +21,60 @@ WHATSAPP_BOOT_TIMEOUT = 16
 CONTACT_OPEN_ATTEMPTS = 3
 
 
+def _feedback_for_exception(error: Exception, *, target: str) -> dict:
+    """Return structured user feedback for common WhatsApp automation failures."""
+    text = str(error).lower()
+
+    if isinstance(error, WindowNotFoundError):
+        return {
+            "error_code": "WHATSAPP_WINDOW_NOT_FOUND",
+            "message": "I could not find WhatsApp Desktop on screen.",
+            "recovery_steps": [
+                "Open WhatsApp Desktop and wait for it to fully load.",
+                "Keep WhatsApp on the foreground and unlocked.",
+                "Try the command again.",
+            ],
+        }
+
+    if "missing target" in text or "contact" in text and "missing" in text:
+        return {
+            "error_code": "WHATSAPP_MISSING_TARGET",
+            "message": "I need a contact name or phone number.",
+            "recovery_steps": [
+                "Say: send 'hello' to John on WhatsApp.",
+                "Or use an international phone number, for example +919876543210.",
+            ],
+        }
+
+    if "missing message" in text:
+        return {
+            "error_code": "WHATSAPP_MISSING_MESSAGE",
+            "message": "I need the message text before sending.",
+            "recovery_steps": [
+                "Say: send 'meeting starts at 5' to John on WhatsApp.",
+            ],
+        }
+
+    if "chat" in text and "could not open" in text or "failed to open chat" in text:
+        return {
+            "error_code": "WHATSAPP_CONTACT_NOT_FOUND",
+            "message": f"I could not open a WhatsApp chat for {target}.",
+            "recovery_steps": [
+                "Verify the contact name in WhatsApp matches exactly.",
+                "Try using the contact's phone number instead.",
+            ],
+        }
+
+    return {
+        "error_code": "WHATSAPP_SEND_FAILED",
+        "message": "WhatsApp message failed to send.",
+        "recovery_steps": [
+            "Confirm WhatsApp Desktop is logged in and online.",
+            "Try again in a few seconds.",
+        ],
+    }
+
+
 def _sleep(seconds: float) -> None:
     time.sleep(seconds)
 
@@ -416,14 +470,22 @@ class WhatsAppSendTool(BaseTool):
             return {
                 "status": "error",
                 "message": "Missing WhatsApp contact name or phone number",
-                "data": {"required": ["target/contact", "message/body"]},
+                "data": {
+                    "error_code": "WHATSAPP_MISSING_TARGET",
+                    "required": ["target/contact", "message/body"],
+                    "example": "send 'hello there' to John on WhatsApp",
+                },
             }
 
         if not resolved_message:
             return {
                 "status": "error",
                 "message": "Missing WhatsApp message text",
-                "data": {"required": ["target/contact", "message/body"]},
+                "data": {
+                    "error_code": "WHATSAPP_MISSING_MESSAGE",
+                    "required": ["target/contact", "message/body"],
+                    "example": "send 'meeting in 10 minutes' to John on WhatsApp",
+                },
             }
 
         # Safety: block likely parser swap where message becomes the contact name.
@@ -434,7 +496,11 @@ class WhatsAppSendTool(BaseTool):
                     "I parsed the same text for contact and message, so I stopped to avoid sending to the wrong person. "
                     "Please say: send 'your message' to contact on WhatsApp."
                 ),
-                "data": {"target": resolved_target, "message": resolved_message},
+                "data": {
+                    "error_code": "WHATSAPP_AMBIGUOUS_INPUT",
+                    "target": resolved_target,
+                    "message": resolved_message,
+                },
             }
 
         def _send():
@@ -443,30 +509,56 @@ class WhatsAppSendTool(BaseTool):
                 "status": "success",
                 "message": f"Message sent to {resolved_target} on WhatsApp",
                 "data": {
+                    "error_code": None,
                     "target": resolved_target,
                     "message_length": len(resolved_message),
                     "target_type": "phone" if _looks_like_phone_target(resolved_target) else "contact",
+                    "user_feedback": f"Delivered to {resolved_target}.",
                 },
             }
 
-        return error_handler.wrap_automation(
+        result = error_handler.wrap_automation(
             func=_send,
             operation_name="WhatsApp Send Message",
             context={"app": "WhatsApp", "target": resolved_target},
         )
 
+        if result.get("status") == "error":
+            details = _feedback_for_exception(
+                AutomationError(result.get("data", {}).get("technical_error", result.get("message", ""))),
+                target=resolved_target,
+            )
+            result.setdefault("data", {})
+            result["data"].update(details)
+            result["message"] = details["message"]
+
+        return result
+
 
 class WhatsAppDesktop:
     """Compatibility wrapper used by automation router."""
+
+    def __init__(self):
+        self._last_error: dict = {}
+
+    def _set_last_error(self, error: Exception, *, target: str = "") -> None:
+        details = _feedback_for_exception(error, target=target)
+        details["technical_error"] = str(error)
+        self._last_error = details
+
+    def get_last_error(self) -> dict:
+        return dict(self._last_error)
 
     def open_app(self) -> bool:
         try:
             _open_whatsapp_protocol("whatsapp:")
             _wait_for_whatsapp(timeout=12)
             _focus_and_prime_ui()
+            self._last_error = {}
             return True
         except Exception as e:
             logger.error(f"[WhatsApp] open_app failed: {e}")
+            self._set_last_error(e)
             return False
 
     def open_chat(self, target: str) -> bool:
@@ -476,23 +568,28 @@ class WhatsAppDesktop:
                 _open_whatsapp_protocol(f"whatsapp://send?phone={phone}")
                 _wait_for_whatsapp(timeout=WHATSAPP_BOOT_TIMEOUT)
                 _focus_and_prime_ui()
+                self._last_error = {}
                 return True
 
             if not self.open_app():
                 return False
 
             _open_chat_by_contact((target or "").strip())
+            self._last_error = {}
             return True
         except Exception as e:
             logger.error(f"[WhatsApp] open_chat failed: {e}")
+            self._set_last_error(e, target=(target or "").strip())
             return False
 
     def send_message(self, target: str, message: str) -> bool:
         try:
             send_whatsapp_message(target, message)
+            self._last_error = {}
             return True
         except Exception as e:
             logger.error(f"[WhatsApp] send_message failed: {e}")
+            self._set_last_error(e, target=(target or "").strip())
             return False
 
 

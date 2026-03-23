@@ -65,20 +65,35 @@ def execute(command: dict) -> dict:
             if success:
                 return {"status": "success", "message": "Opening WhatsApp"}
             else:
-                return {"status": "error", "message": "Could not open WhatsApp"}
+                feedback = whatsapp.get_last_error() if hasattr(whatsapp, "get_last_error") else {}
+                return {
+                    "status": "error",
+                    "message": feedback.get("message", "Could not open WhatsApp"),
+                    "data": feedback,
+                }
 
 
         elif intent == "open_whatsapp_chat":
             success = whatsapp.open_chat(target)
             if success:
                 return {"status": "success", "message": f"Opening chat with {target}"}
-            return {"status": "error", "message": f"Could not open chat with {target}"}
+            feedback = whatsapp.get_last_error() if hasattr(whatsapp, "get_last_error") else {}
+            return {
+                "status": "error",
+                "message": feedback.get("message", f"Could not open chat with {target}"),
+                "data": feedback,
+            }
 
         elif intent == "send_whatsapp":
             success = whatsapp.send_message(target, data)
             if success:
                 return {"status": "success", "message": f"Message sent to {target}"}
-            return {"status": "error", "message": f"Failed to send message to {target}"}
+            feedback = whatsapp.get_last_error() if hasattr(whatsapp, "get_last_error") else {}
+            return {
+                "status": "error",
+                "message": feedback.get("message", f"Failed to send message to {target}"),
+                "data": feedback,
+            }
 
 
 

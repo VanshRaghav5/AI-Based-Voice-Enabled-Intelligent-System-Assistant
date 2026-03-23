@@ -60,6 +60,19 @@ class TestParameterExtractor:
         assert params["to"] == "user@example.com"
         assert "subject" in params
         assert "body" in params
+
+    def test_extract_email_unquoted_subject_and_body(self):
+        """Unquoted email subject/body should be extracted from natural phrasing."""
+        from backend.llm.parameter_extractor import parameter_extractor
+
+        params, confidence = parameter_extractor.extract(
+            "send email to user@example.com subject sprint update body deployment completed",
+            "email.send"
+        )
+
+        assert params.get("subject", "") == "sprint update"
+        assert params.get("body", "") == "deployment completed"
+        assert confidence >= 0.6
     
     def test_extract_volume_step(self):
         """Test extracting volume step parameter."""
@@ -85,6 +98,18 @@ class TestParameterExtractor:
         
         assert "url" in params
         assert "google.com" in params["url"]
+
+    def test_extract_browser_url_without_url_keyword(self):
+        """Natural phrasing like 'open github.com' should still extract URL."""
+        from backend.llm.parameter_extractor import parameter_extractor
+
+        params, confidence = parameter_extractor.extract(
+            "open github.com/docs",
+            "browser.open"
+        )
+
+        assert params.get("url", "").startswith("github.com")
+        assert confidence >= 0.8
     
     def test_extract_search_query(self):
         """Test extracting search query."""
@@ -97,6 +122,42 @@ class TestParameterExtractor:
         
         assert "query" in params
         assert "python" in params["query"].lower()
+
+    def test_extract_multiword_search_query(self):
+        """Multi-word search queries should not be truncated at first space."""
+        from backend.llm.parameter_extractor import parameter_extractor
+
+        params, confidence = parameter_extractor.extract(
+            "search for python decorators tutorial",
+            "browser.search_google"
+        )
+
+        assert params.get("query", "") == "python decorators tutorial"
+        assert confidence >= 0.8
+
+    def test_extract_lookup_style_search_query(self):
+        """Lookup phrasing should map to a usable search query."""
+        from backend.llm.parameter_extractor import parameter_extractor
+
+        params, confidence = parameter_extractor.extract(
+            "look up latest ai safety papers on google",
+            "browser.search_google"
+        )
+
+        assert "ai safety" in params.get("query", "")
+        assert confidence >= 0.8
+
+    def test_extract_multiword_app_name(self):
+        """App extraction should keep multi-word app names."""
+        from backend.llm.parameter_extractor import parameter_extractor
+
+        params, confidence = parameter_extractor.extract(
+            "launch visual studio code",
+            "app.launch"
+        )
+
+        assert params.get("app_name", "") == "visual studio code"
+        assert confidence >= 0.8
     
     def test_extract_file_move_params(self):
         """Test extracting source and destination for file move."""

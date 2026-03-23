@@ -135,3 +135,52 @@ If you've tried everything above:
 ---
 
 **Need Help?** Share the output of `python tests/manual/test_voice.py` for further debugging.
+
+---
+
+## TTS Voice And Accent Options (Piper)
+
+Text-to-speech now supports configurable voice + accent profiles.
+
+### Where To Configure
+
+Edit the `tts` section in `backend/config/assistant_config.json`:
+
+```json
+"tts": {
+   "active_voice": "danny",
+   "active_accent": "en_US",
+   "allow_accent_fallback": true,
+   "voice_catalog": {
+      "en_US": {
+         "danny": "en_US-danny-low.onnx",
+         "amy": "en_US-amy-medium.onnx"
+      },
+      "en_GB": {
+         "jenny": "en_GB-jenny-high.onnx"
+      }
+   }
+}
+```
+
+### Add New Voices / Accents
+
+1. Copy Piper `.onnx` and `.onnx.json` files into `backend/voice_engine/tts/piper`.
+2. Add the model filename to `tts.voice_catalog`.
+3. Set `tts.active_voice` and `tts.active_accent`.
+4. Restart backend.
+
+If a selected voice is not installed, the assistant safely falls back to `en_US-danny-low.onnx`.
+
+### Runtime API Support
+
+- `GET /api/settings` now returns:
+   - `tts_voice`
+   - `tts_accent`
+   - `tts_available_voices`
+- `POST /api/settings` accepts:
+   - `tts_voice`
+   - `tts_accent`
+- `POST /api/speak` accepts optional:
+   - `voice`
+   - `accent`

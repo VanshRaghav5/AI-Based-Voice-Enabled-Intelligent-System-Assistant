@@ -149,6 +149,13 @@ class TestCommandParser:
         # No match should score low
         score = command_parser._calculate_keyword_match("email something", "file.open")
         assert score < 0.5
+
+    def test_calculate_keyword_match_for_intent_alias(self):
+        """Planner alias intents should score like canonical intents."""
+        from backend.core.command_parser import command_parser
+
+        score = command_parser._calculate_keyword_match("open github.com", "browser.open_url")
+        assert score > 0.5
     
     @patch('backend.core.command_parser.LLMClient')
     def test_parsed_command_dataclass(self, mock_llm_class):
