@@ -878,5 +878,225 @@
     "executed": true,
     "needed_clarification": false,
     "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:40.984374",
+    "command": "open file test.txt",
+    "intent": "file.open",
+    "confidence": 0.72,
+    "source": "ollama",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:40.991812",
+    "command": "volume up",
+    "intent": "system.volume.up",
+    "confidence": 0.88,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:40.998818",
+    "command": "send whatsapp message",
+    "intent": "whatsapp.send",
+    "confidence": 0.72,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": false
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.003988",
+    "command": "send email",
+    "intent": "email.send",
+    "confidence": 0.72,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": false
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.009602",
+    "command": "do something weird",
+    "intent": "unknown.action",
+    "confidence": 0.68,
+    "source": "fallback",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.021770",
+    "command": "open file test.txt",
+    "intent": "file.open",
+    "confidence": 0.72,
+    "source": "ollama",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.025050",
+    "command": "open file test.txt",
+    "intent": "file.open",
+    "confidence": 0.72,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.031128",
+    "command": "unknown command",
+    "intent": "unknown",
+    "confidence": 0.0,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.037217",
+    "command": "create file C:\\test.txt",
+    "intent": "file.create",
+    "confidence": 0.88,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.043794",
+    "command": "send 'hello' to John on WhatsApp",
+    "intent": "whatsapp.send",
+    "confidence": 0.968,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T19:55:41.049309",
+    "command": "volume up 20",
+    "intent": "system.volume.up",
+    "confidence": 0.98,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.186400",
+    "command": "open file test.txt",
+    "intent": "file.open",
+    "confidence": 0.72,
+    "source": "ollama",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.190401",
+    "command": "volume up",
+    "intent": "system.volume.up",
+    "confidence": 0.88,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.195361",
+    "command": "send whatsapp message",
+    "intent": "whatsapp.send",
+    "confidence": 0.72,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": false
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.201707",
+    "command": "send email",
+    "intent": "email.send",
+    "confidence": 0.72,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": false
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.207353",
+    "command": "do something weird",
+    "intent": "unknown.action",
+    "confidence": 0.68,
+    "source": "fallback",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.216392",
+    "command": "open file test.txt",
+    "intent": "file.open",
+    "confidence": 0.72,
+    "source": "ollama",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.219975",
+    "command": "open file test.txt",
+    "intent": "file.open",
+    "confidence": 0.72,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.226522",
+    "command": "unknown command",
+    "intent": "unknown",
+    "confidence": 0.0,
+    "source": "fallback",
+    "executed": false,
+    "needed_clarification": true,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.230596",
+    "command": "create file C:\\test.txt",
+    "intent": "file.create",
+    "confidence": 0.88,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.236310",
+    "command": "send 'hello' to John on WhatsApp",
+    "intent": "whatsapp.send",
+    "confidence": 0.968,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
+  },
+  {
+    "timestamp": "2026-03-31T20:02:48.240825",
+    "command": "volume up 20",
+    "intent": "system.volume.up",
+    "confidence": 0.98,
+    "source": "ollama",
+    "executed": true,
+    "needed_clarification": false,
+    "validation_passed": true
   }
 ]
