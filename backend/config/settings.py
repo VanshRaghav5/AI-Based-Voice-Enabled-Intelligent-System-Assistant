@@ -73,6 +73,15 @@ TTS_VOICE_CATALOG = dict(assistant_config.get("tts.voice_catalog", {}))
 
 
 # ==============================
+# Voice Runtime Settings
+# ==============================
+
+VOICE_RESPONSE_COOLDOWN_SECONDS = float(
+	assistant_config.get("voice.response_cooldown_seconds", 0.35)
+)
+
+
+# ==============================
 # LLM Settings
 # ==============================
 
