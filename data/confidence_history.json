@@ -660,7 +660,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.687093",
+    "timestamp": "2026-04-01T08:53:02.848588",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -670,7 +670,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.696178",
+    "timestamp": "2026-04-01T08:53:02.863991",
     "command": "volume up",
     "intent": "system.volume.up",
     "confidence": 0.88,
@@ -680,7 +680,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.706197",
+    "timestamp": "2026-04-01T08:53:02.885454",
     "command": "send whatsapp message",
     "intent": "whatsapp.send",
     "confidence": 0.72,
@@ -690,7 +690,7 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-23T15:13:13.717195",
+    "timestamp": "2026-04-01T08:53:02.909066",
     "command": "send email",
     "intent": "email.send",
     "confidence": 0.72,
@@ -700,7 +700,7 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-23T15:13:13.726724",
+    "timestamp": "2026-04-01T08:53:02.926946",
     "command": "do something weird",
     "intent": "unknown.action",
     "confidence": 0.68,
@@ -710,7 +710,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.743077",
+    "timestamp": "2026-04-01T08:53:03.017443",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -720,7 +720,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.749483",
+    "timestamp": "2026-04-01T08:53:03.028064",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -730,7 +730,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.761484",
+    "timestamp": "2026-04-01T08:53:03.052998",
     "command": "unknown command",
     "intent": "unknown",
     "confidence": 0.0,
@@ -740,7 +740,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.772555",
+    "timestamp": "2026-04-01T08:53:03.067729",
     "command": "create file C:\\test.txt",
     "intent": "file.create",
     "confidence": 0.88,
@@ -750,7 +750,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.783382",
+    "timestamp": "2026-04-01T08:53:03.084439",
     "command": "send 'hello' to John on WhatsApp",
     "intent": "whatsapp.send",
     "confidence": 0.968,
@@ -760,7 +760,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:13:13.793548",
+    "timestamp": "2026-04-01T08:53:03.100394",
     "command": "volume up 20",
     "intent": "system.volume.up",
     "confidence": 0.98,
@@ -770,7 +770,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.722928",
+    "timestamp": "2026-04-01T08:59:36.752656",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -780,7 +780,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.735270",
+    "timestamp": "2026-04-01T08:59:36.775445",
     "command": "volume up",
     "intent": "system.volume.up",
     "confidence": 0.88,
@@ -790,7 +790,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.748585",
+    "timestamp": "2026-04-01T08:59:36.799099",
     "command": "send whatsapp message",
     "intent": "whatsapp.send",
     "confidence": 0.72,
@@ -800,7 +800,7 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-23T15:26:25.763070",
+    "timestamp": "2026-04-01T08:59:36.820163",
     "command": "send email",
     "intent": "email.send",
     "confidence": 0.72,
@@ -810,17 +810,17 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-23T15:26:25.776250",
+    "timestamp": "2026-04-01T08:59:36.836518",
     "command": "do something weird",
     "intent": "unknown.action",
     "confidence": 0.68,
     "source": "fallback",
-    "executed": true,
-    "needed_clarification": false,
+    "executed": false,
+    "needed_clarification": true,
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.798629",
+    "timestamp": "2026-04-01T08:59:36.871163",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -830,7 +830,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.807633",
+    "timestamp": "2026-04-01T08:59:36.885649",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -840,7 +840,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.819580",
+    "timestamp": "2026-04-01T08:59:36.906962",
     "command": "unknown command",
     "intent": "unknown",
     "confidence": 0.0,
@@ -850,7 +850,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.831336",
+    "timestamp": "2026-04-01T08:59:36.926236",
     "command": "create file C:\\test.txt",
     "intent": "file.create",
     "confidence": 0.88,
@@ -860,7 +860,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.845736",
+    "timestamp": "2026-04-01T08:59:36.945431",
     "command": "send 'hello' to John on WhatsApp",
     "intent": "whatsapp.send",
     "confidence": 0.968,
@@ -870,7 +870,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-23T15:26:25.859456",
+    "timestamp": "2026-04-01T08:59:36.964893",
     "command": "volume up 20",
     "intent": "system.volume.up",
     "confidence": 0.98,
@@ -880,7 +880,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:40.984374",
+    "timestamp": "2026-04-01T09:03:40.506708",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -890,7 +890,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:40.991812",
+    "timestamp": "2026-04-01T09:03:40.524340",
     "command": "volume up",
     "intent": "system.volume.up",
     "confidence": 0.88,
@@ -900,7 +900,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:40.998818",
+    "timestamp": "2026-04-01T09:03:40.546477",
     "command": "send whatsapp message",
     "intent": "whatsapp.send",
     "confidence": 0.72,
@@ -910,7 +910,7 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-31T19:55:41.003988",
+    "timestamp": "2026-04-01T09:03:40.571850",
     "command": "send email",
     "intent": "email.send",
     "confidence": 0.72,
@@ -920,7 +920,7 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-31T19:55:41.009602",
+    "timestamp": "2026-04-01T09:03:40.591176",
     "command": "do something weird",
     "intent": "unknown.action",
     "confidence": 0.68,
@@ -930,7 +930,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:41.021770",
+    "timestamp": "2026-04-01T09:03:40.629551",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -940,7 +940,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:41.025050",
+    "timestamp": "2026-04-01T09:03:40.644177",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -950,7 +950,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:41.031128",
+    "timestamp": "2026-04-01T09:03:40.668651",
     "command": "unknown command",
     "intent": "unknown",
     "confidence": 0.0,
@@ -960,7 +960,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:41.037217",
+    "timestamp": "2026-04-01T09:03:40.685741",
     "command": "create file C:\\test.txt",
     "intent": "file.create",
     "confidence": 0.88,
@@ -970,7 +970,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:41.043794",
+    "timestamp": "2026-04-01T09:03:40.702488",
     "command": "send 'hello' to John on WhatsApp",
     "intent": "whatsapp.send",
     "confidence": 0.968,
@@ -980,7 +980,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T19:55:41.049309",
+    "timestamp": "2026-04-01T09:03:40.716184",
     "command": "volume up 20",
     "intent": "system.volume.up",
     "confidence": 0.98,
@@ -990,7 +990,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.186400",
+    "timestamp": "2026-04-01T09:08:46.737354",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -1000,7 +1000,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.190401",
+    "timestamp": "2026-04-01T09:08:46.758535",
     "command": "volume up",
     "intent": "system.volume.up",
     "confidence": 0.88,
@@ -1010,7 +1010,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.195361",
+    "timestamp": "2026-04-01T09:08:46.790796",
     "command": "send whatsapp message",
     "intent": "whatsapp.send",
     "confidence": 0.72,
@@ -1020,7 +1020,7 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-31T20:02:48.201707",
+    "timestamp": "2026-04-01T09:08:46.809018",
     "command": "send email",
     "intent": "email.send",
     "confidence": 0.72,
@@ -1030,7 +1030,7 @@
     "validation_passed": false
   },
   {
-    "timestamp": "2026-03-31T20:02:48.207353",
+    "timestamp": "2026-04-01T09:08:46.827109",
     "command": "do something weird",
     "intent": "unknown.action",
     "confidence": 0.68,
@@ -1040,7 +1040,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.216392",
+    "timestamp": "2026-04-01T09:08:46.858154",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -1050,7 +1050,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.219975",
+    "timestamp": "2026-04-01T09:08:46.874597",
     "command": "open file test.txt",
     "intent": "file.open",
     "confidence": 0.72,
@@ -1060,7 +1060,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.226522",
+    "timestamp": "2026-04-01T09:08:46.895883",
     "command": "unknown command",
     "intent": "unknown",
     "confidence": 0.0,
@@ -1070,7 +1070,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.230596",
+    "timestamp": "2026-04-01T09:08:46.915697",
     "command": "create file C:\\test.txt",
     "intent": "file.create",
     "confidence": 0.88,
@@ -1080,7 +1080,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.236310",
+    "timestamp": "2026-04-01T09:08:46.937680",
     "command": "send 'hello' to John on WhatsApp",
     "intent": "whatsapp.send",
     "confidence": 0.968,
@@ -1090,7 +1090,7 @@
     "validation_passed": true
   },
   {
-    "timestamp": "2026-03-31T20:02:48.240825",
+    "timestamp": "2026-04-01T09:08:46.964487",
     "command": "volume up 20",
     "intent": "system.volume.up",
     "confidence": 0.98,

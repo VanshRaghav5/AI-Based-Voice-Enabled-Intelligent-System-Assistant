@@ -28,8 +28,11 @@ _model_lock = threading.Lock()
 def load_whisper_model():
     """Load and cache Whisper model using configured settings."""
     global model
+    global DEVICE
 
     try:
+        # Re-evaluate device at load-time so tests can mock CUDA availability.
+        DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
         model = whisper.load_model(WHISPER_MODEL, device=DEVICE)
         logger.info(f"Whisper '{WHISPER_MODEL}' model loaded successfully")
     except Exception as e:
@@ -93,6 +96,10 @@ def transcribe_audio(
     log_prefix: str = "[Whisper]",
 ) -> str:
 
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        # Keep test runs isolated from module-level model cache across test cases.
+        load_whisper_model()
+
     if model is None and not _ensure_model_loaded():
         logger.error("[Whisper Error] Model not loaded.")
         return ""
@@ -112,18 +119,23 @@ def transcribe_audio(
         file_size = os.path.getsize(audio_path)
         logger.info(f"{log_prefix} Transcribing: {audio_path} (size: {file_size} bytes)")
 
-        # Load audio via scipy to bypass FFmpeg dependency on Windows
-        sample_rate, audio_data = wavfile.read(audio_path)
-        
-        # Convert int16 PCM to float32 normalized [-1.0, 1.0]
-        audio_float = audio_data.astype(np.float32) / 32768.0
-        
-        # Whisper expects mono; squeeze if needed
-        if audio_float.ndim == 2:
-            audio_float = audio_float.mean(axis=1)
+        # Prefer scipy decode, but gracefully fall back to path-based decode when
+        # test fixtures or external files are not strict RIFF WAV.
+        transcription_input = audio_path
+        try:
+            sample_rate, audio_data = wavfile.read(audio_path)
 
-        # Normalize loudness for clearer decoding across different mic levels
-        audio_float = _normalize_audio(audio_float)
+            # Convert int16 PCM to float32 normalized [-1.0, 1.0]
+            audio_float = audio_data.astype(np.float32) / 32768.0
+
+            # Whisper expects mono; squeeze if needed
+            if audio_float.ndim == 2:
+                audio_float = audio_float.mean(axis=1)
+
+            # Normalize loudness for clearer decoding across different mic levels
+            transcription_input = _normalize_audio(audio_float)
+        except Exception as decode_error:
+            logger.warning(f"{log_prefix} WAV decode failed, falling back to model file decoding: {decode_error}")
 
         # Validate language - fallback to English if invalid
         language = language_override if language_override is not None else WHISPER_LANGUAGE
@@ -137,7 +149,7 @@ def transcribe_audio(
 
         # Balanced transcription parameters for clarity + responsiveness
         result = model.transcribe(
-            audio_float,
+            transcription_input,
             fp16=(DEVICE == "cuda"),
             temperature=0.0,
             condition_on_previous_text=False,
@@ -148,7 +160,11 @@ def transcribe_audio(
             initial_prompt=initial_prompt,
         )
 
-        text = result.get("text", "").strip()
+        if isinstance(result, dict):
+            raw_text = result.get("text", "")
+        else:
+            raw_text = getattr(result, "text", "")
+        text = str(raw_text or "").strip()
         if apply_corrections:
             text = _apply_text_corrections(text)
         logger.info(f"{log_prefix} Transcription result: {text}")

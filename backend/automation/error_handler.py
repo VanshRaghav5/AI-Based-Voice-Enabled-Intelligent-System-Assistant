@@ -39,6 +39,7 @@ class ErrorHandler:
         "timeout": "The operation took too long to complete. Please try again.",
         "permission_denied": "I don't have permission to perform that action.",
         "file_not_found": "The file or folder was not found at the specified location.",
+        "file_exists": "The target file or folder already exists.",
         "network_error": "There was a network connection problem. Please check your internet connection.",
         "config_missing": "The required configuration is missing. Please set up {config} first.",
         "automation_failed": "The automation task failed. {reason}",
@@ -113,8 +114,14 @@ class ErrorHandler:
         """Generate user-friendly error message based on error type"""
         
         error_str = str(error).lower()
+
+        if isinstance(error, FileExistsError) or "already exists" in error_str or "exists" in error_str:
+            return ErrorHandler.ERROR_MESSAGES["file_exists"]
         
         # Match common error patterns
+        if "file" in error_str or "path" in error_str:
+            return ErrorHandler.ERROR_MESSAGES["file_not_found"]
+
         if "window" in error_str or "not found" in error_str:
             app = context.get("app", "required application")
             return ErrorHandler.ERROR_MESSAGES["window_not_found"].format(app=app)
@@ -128,9 +135,6 @@ class ErrorHandler:
         
         elif "permission" in error_str or "access denied" in error_str:
             return ErrorHandler.ERROR_MESSAGES["permission_denied"]
-        
-        elif "file" in error_str or "path" in error_str:
-            return ErrorHandler.ERROR_MESSAGES["file_not_found"]
         
         elif "network" in error_str or "connection" in error_str:
             return ErrorHandler.ERROR_MESSAGES["network_error"]
