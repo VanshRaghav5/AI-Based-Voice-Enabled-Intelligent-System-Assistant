@@ -79,11 +79,15 @@ class FolderDeleteTool(BaseTool):
                 return {"status": "error", "message": "Folder not found", "data": {}}
 
             # Get folder info before deletion
-            folder_size = sum(
-                os.path.getsize(os.path.join(dirpath, filename))
-                for dirpath, _, filenames in os.walk(path)
-                for filename in filenames
-            )
+            folder_size = 0
+            for dirpath, _, filenames in os.walk(path):
+                for filename in filenames:
+                    file_path = os.path.join(dirpath, filename)
+                    try:
+                        folder_size += os.path.getsize(file_path)
+                    except Exception:
+                        # Ignore transient/mocked file stat failures and continue delete flow.
+                        continue
             
             # Move to Recycle Bin instead of permanent delete
             send2trash(path)

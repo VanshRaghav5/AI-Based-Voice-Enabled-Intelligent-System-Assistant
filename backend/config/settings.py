@@ -21,18 +21,6 @@ RECORDING_DYNAMIC_SILENCE_MIN = int(
 RECORDING_DYNAMIC_SILENCE_MAX = int(
 	assistant_config.get("recording.dynamic_silence_max_int16", 2200)
 )
-RECORDING_SILENCE_DURATION_SECONDS = float(
-	assistant_config.get("recording.silence_duration_seconds", 0.6)
-)
-RECORDING_INITIAL_LISTEN_SECONDS = float(
-	assistant_config.get("recording.initial_listen_seconds", 1.2)
-)
-VOICE_ADAPTIVE_MAX_DURATION_SECONDS = float(
-	assistant_config.get("voice.adaptive_max_duration_seconds", 5.0)
-)
-VOICE_ADAPTIVE_CHUNK_SECONDS = float(
-	assistant_config.get("voice.adaptive_chunk_seconds", 0.05)
-)
 
 
 # ==============================
@@ -91,16 +79,7 @@ TTS_VOICE_CATALOG = dict(assistant_config.get("tts.voice_catalog", {}))
 LLM_MODEL = assistant_config.get("llm.model", "qwen2.5:7b-instruct-q4_0")
 LLM_TIMEOUT_SECONDS = int(assistant_config.get("llm.timeout_seconds", 15))
 LLM_FAST_ROUTER_ENABLED = bool(assistant_config.get("llm.fast_router_enabled", True))
-LLM_MAX_AGENT_ITERATIONS = int(assistant_config.get("llm.max_agent_iterations", 2))
-
-
-# ==============================
-# Voice Loop Latency Settings
-# ==============================
-
-VOICE_RESPONSE_COOLDOWN_SECONDS = float(
-	assistant_config.get("voice.response_cooldown_seconds", 0.65)
-)
+LLM_MAX_AGENT_ITERATIONS = int(assistant_config.get("llm.max_agent_iterations", 3))
 
 
 # ==============================
