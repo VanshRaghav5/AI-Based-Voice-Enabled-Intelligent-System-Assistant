@@ -5,6 +5,16 @@ import time
 from typing import Optional, List
 from backend.config.logger import logger
 
+try:
+    import pygetwindow as gw
+except ImportError:
+    gw = None
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 
 class WindowDetector:
     """Utility for detecting and verifying window states before automation"""
@@ -22,7 +32,9 @@ class WindowDetector:
             True if window found, False otherwise
         """
         try:
-            import pygetwindow as gw
+            if gw is None:
+                logger.warning("pygetwindow not available, skipping window detection")
+                return True
             
             start_time = time.time()
             while time.time() - start_time < timeout:
@@ -36,10 +48,6 @@ class WindowDetector:
             logger.warning(f"Window not found: {window_title_part} (timeout after {timeout}s)")
             return False
             
-        except ImportError:
-            # Fallback if pygetwindow not available
-            logger.warning("pygetwindow not available, skipping window detection")
-            return True  # Assume window exists to not block execution
         except Exception as e:
             logger.error(f"Window detection error: {e}")
             return False
@@ -70,7 +78,9 @@ class WindowDetector:
             True if window focused successfully
         """
         try:
-            import pygetwindow as gw
+            if gw is None:
+                logger.warning("pygetwindow not available, skipping window focus")
+                return True
             
             windows = gw.getWindowsWithTitle(window_title_part)
             if windows:
@@ -83,9 +93,6 @@ class WindowDetector:
                 logger.warning(f"Could not find window to focus: {window_title_part}")
                 return False
                 
-        except ImportError:
-            logger.warning("pygetwindow not available, skipping window focus")
-            return True  # Assume success to not block execution
         except Exception as e:
             logger.error(f"Window focus error: {e}")
             return False
@@ -102,7 +109,9 @@ class WindowDetector:
             True if process is running
         """
         try:
-            import psutil
+            if psutil is None:
+                logger.warning("psutil not available, skipping process detection")
+                return True
             
             process_name_lower = process_name.lower()
             for proc in psutil.process_iter(['name']):
@@ -116,9 +125,6 @@ class WindowDetector:
             logger.debug(f"Process not found: {process_name}")
             return False
             
-        except ImportError:
-            logger.warning("psutil not available, skipping process detection")
-            return True  # Assume running to not block execution
         except Exception as e:
             logger.error(f"Process detection error: {e}")
             return False

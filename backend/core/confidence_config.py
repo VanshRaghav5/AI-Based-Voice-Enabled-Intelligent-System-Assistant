@@ -6,6 +6,7 @@ Configurable thresholds and settings for the confidence system.
 
 import os
 import json
+import copy
 from typing import Dict, Any
 from backend.config.logger import logger
 
@@ -58,7 +59,7 @@ class ConfidenceConfig:
             )
         
         self.config_file = os.path.abspath(config_file)
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
         
         # Ensure data directory exists
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
@@ -135,7 +136,7 @@ class ConfidenceConfig:
             return "reject"
         elif confidence >= self.auto_execute_threshold:
             return "execute"
-        elif self.should_confirm(confidence):
+        elif confidence >= self.reject_threshold:
             return "confirm"
         else:
             return "clarify"
@@ -164,7 +165,7 @@ class ConfidenceConfig:
     
     def reset_to_defaults(self) -> None:
         """Reset configuration to defaults."""
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = copy.deepcopy(self.DEFAULT_CONFIG)
         self._save_config()
         logger.info("Reset confidence configuration to defaults")
     

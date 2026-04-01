@@ -40,6 +40,8 @@ backend/data/audio/
 backend/data/session_memory.json
 backend/data/delete_history.json
 backend/data/assistant.db
+data/confidence_history.json
+data/confidence_history.json.bak
 
 # ==================================
 # SQLite Databases
@@ -125,3 +127,8 @@ test_import4.py
 test_import5.py
 test_import6.py
 test_import7.py
+
+# ==================================
+# Local Launcher Scripts
+# ==================================
+START.bat
