@@ -1,7 +1,9 @@
 """Language translation helpers for multi-language command processing."""
 
+import time
 from typing import Tuple
 
+from backend.config.assistant_config import assistant_config
 from backend.config.logger import logger
 
 try:
@@ -30,8 +32,63 @@ class TranslationService:
 
     def __init__(self):
         self.enabled = GoogleTranslator is not None
+        self.cache_ttl_seconds = float(assistant_config.get("translation.cache_ttl_seconds", 30))
+        self.cache_max_entries = int(assistant_config.get("translation.cache_max_entries", 512))
+        self._translation_cache = {}
+        self._translator_pool = {}
         if not self.enabled:
             logger.warning("[Translation] deep-translator not installed, running without translation")
+
+    def _build_cache_key(self, source: str, target: str, text: str) -> str:
+        normalized_text = str(text or "").strip()
+        if not normalized_text:
+            return ""
+        return f"{source}->{target}::{normalized_text.lower()}"
+
+    def _get_cached_translation(self, source: str, target: str, text: str):
+        if self.cache_ttl_seconds <= 0:
+            return None
+
+        cache_key = self._build_cache_key(source, target, text)
+        if not cache_key:
+            return None
+
+        cached = self._translation_cache.get(cache_key)
+        if not cached:
+            return None
+
+        if cached.get("expires_at", 0.0) < time.time():
+            self._translation_cache.pop(cache_key, None)
+            return None
+
+        return str(cached.get("value", "") or "")
+
+    def _store_translation_cache(self, source: str, target: str, text: str, translated: str) -> None:
+        if self.cache_ttl_seconds <= 0 or self.cache_max_entries <= 0:
+            return
+
+        cache_key = self._build_cache_key(source, target, text)
+        if not cache_key:
+            return
+
+        self._translation_cache[cache_key] = {
+            "value": str(translated or ""),
+            "expires_at": time.time() + self.cache_ttl_seconds,
+        }
+
+        while len(self._translation_cache) > self.cache_max_entries:
+            oldest_key = next(iter(self._translation_cache))
+            self._translation_cache.pop(oldest_key, None)
+
+    def _get_translator(self, source: str, target: str):
+        key = f"{source}->{target}"
+        translator = self._translator_pool.get(key)
+        if translator is not None:
+            return translator
+
+        translator = GoogleTranslator(source=source, target=target)
+        self._translator_pool[key] = translator
+        return translator
 
     @staticmethod
     def normalize_language(language: str) -> str:
@@ -45,10 +102,16 @@ class TranslationService:
         if not self.enabled or target_lang == "en" or not text:
             return text, False
 
+        cached = self._get_cached_translation("auto", "en", text)
+        if cached:
+            return cached, cached.strip().lower() != text.strip().lower()
+
         try:
-            translated = GoogleTranslator(source="auto", target="en").translate(text)
+            translated = self._get_translator("auto", "en").translate(text)
             if translated and translated.strip():
-                return translated.strip(), translated.strip().lower() != text.strip().lower()
+                value = translated.strip()
+                self._store_translation_cache("auto", "en", text, value)
+                return value, value.lower() != text.strip().lower()
         except Exception as exc:
             logger.warning(f"[Translation] Command translation failed: {exc}")
 
@@ -64,10 +127,16 @@ class TranslationService:
         if not self.enabled or target_lang == "en" or not text:
             return text, False
 
+        cached = self._get_cached_translation("auto", target_lang, text)
+        if cached:
+            return cached, cached.strip().lower() != text.strip().lower()
+
         try:
-            translated = GoogleTranslator(source="auto", target=target_lang).translate(text)
+            translated = self._get_translator("auto", target_lang).translate(text)
             if translated and translated.strip():
-                return translated.strip(), translated.strip().lower() != text.strip().lower()
+                value = translated.strip()
+                self._store_translation_cache("auto", target_lang, text, value)
+                return value, value.lower() != text.strip().lower()
         except Exception as exc:
             logger.warning(f"[Translation] Response translation failed: {exc}")
 

@@ -25,31 +25,27 @@ class TestWhatsAppDesktopKeyFlow:
 
         with patch("backend.automation.whatsapp_desktop._focus_and_prime_ui"):
             with patch("backend.automation.whatsapp_desktop._search_contact_in_new_chat") as mock_new_chat:
-                with patch("backend.automation.whatsapp_desktop._search_contact") as mock_sidebar_search:
-                    with patch("backend.automation.whatsapp_desktop._open_first_result_with_keyboard") as mock_kb:
-                        with patch("backend.automation.whatsapp_desktop._press_key") as mock_press:
-                            with patch("backend.automation.whatsapp_desktop._focus_whatsapp"):
-                                with patch("backend.automation.whatsapp_desktop._sleep"):
-                                    wd._open_chat_by_contact("Vansh Raghav")
+                with patch("backend.automation.whatsapp_desktop._press_key") as mock_press:
+                    with patch("backend.automation.whatsapp_desktop._focus_whatsapp"):
+                        with patch("backend.automation.whatsapp_desktop._sleep"):
+                            wd._open_chat_by_contact("Vansh Raghav")
 
-        mock_new_chat.assert_called_once_with("Vansh Raghav")
-        mock_sidebar_search.assert_not_called()
-        mock_kb.assert_not_called()
-        assert all(call.args != ("down",) for call in mock_press.call_args_list)
+        mock_new_chat.assert_called_with("Vansh Raghav")
+        assert any(call.args == ("down",) for call in mock_press.call_args_list)
         assert any(call.args == ("enter",) for call in mock_press.call_args_list)
 
     def test_open_chat_by_contact_uses_short_name_variants(self):
         from backend.automation import whatsapp_desktop as wd
 
         with patch("backend.automation.whatsapp_desktop._focus_and_prime_ui"):
-            with patch("backend.automation.whatsapp_desktop._search_contact_in_new_chat") as mock_new_chat:
+            with patch("backend.automation.whatsapp_desktop._search_contact_in_new_chat") as mock_search:
                 with patch("backend.automation.whatsapp_desktop._press_key"):
                     with patch("backend.automation.whatsapp_desktop._focus_whatsapp"):
                         with patch("backend.automation.whatsapp_desktop._sleep"):
                             wd._open_chat_by_contact("Vansh")
 
-        assert mock_new_chat.call_count >= 1
-        first_variant = mock_new_chat.call_args_list[0].args[0]
+        assert mock_search.call_count >= 1
+        first_variant = mock_search.call_args_list[0].args[0]
         assert "vansh" in first_variant.lower()
 
     def test_search_contact_in_new_chat_opens_picker_and_types_contact(self):

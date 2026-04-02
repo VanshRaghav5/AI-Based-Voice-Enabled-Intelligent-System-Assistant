@@ -131,23 +131,31 @@ class ParameterExtractor:
         params = {}
         confidence = 0.3
 
+        def _clean_contact(raw: str) -> str:
+            """Strip 'on whatsapp' suffix and trailing junk from contact name."""
+            cleaned = (raw or "").strip(" .,!?'\"")
+            cleaned = re.sub(r'\s*on\s+whats?\s*app\s*$', '', cleaned, flags=re.IGNORECASE).strip(" .,!?")
+            return cleaned
+
         # Strong natural-language pattern first (works without quotes).
         # Examples:
         # - send testing to vansh on whatsapp
         # - send message testing to vansh
+        # - send hello to swayam gla on whatsapp
         natural = re.search(
-            r'\bsend\s+(.+?)\s+(?:to|for)\s+([A-Za-z0-9@._\-\s]+?)(?:\s+on\s+whats?\s*app|$)',
+            r'\bsend\s+(.+?)\s+(?:to|for)\s+([A-Za-z0-9@._\-\s]+?)\s*(?:on\s+whats?\s*app|$)',
             command,
             re.IGNORECASE,
         )
         if natural:
             msg = natural.group(1).strip(" .,!?'\"")
-            msg = re.sub(r'^(?:message|msg|text)\s+', '', msg, flags=re.IGNORECASE).strip(" .,!?")
-            contact = natural.group(2).strip(" .,!?'\"")
+            msg = re.sub(r'^(?:message|msg|text|a\s+message|a\s+msg)\s+', '', msg, flags=re.IGNORECASE).strip(" .,!?")
+            contact = _clean_contact(natural.group(2))
             if msg:
                 params["message"] = msg
             if contact:
                 params["contact"] = contact
+                params["target"] = contact
             if "message" in params and "contact" in params:
                 return params, 0.92
         
@@ -159,8 +167,11 @@ class ParameterExtractor:
                 if len(groups) >= 2:
                     # Pattern: send "message" to "contact"
                     params["message"] = groups[0].strip()
-                    params["contact"] = groups[1].strip() if groups[1] else ""
-                    confidence = 0.9 if groups[1] else 0.6
+                    contact = _clean_contact(groups[1]) if groups[1] else ""
+                    if contact:
+                        params["contact"] = contact
+                        params["target"] = contact
+                    confidence = 0.9 if contact else 0.6
                     break
                 elif len(groups) == 1:
                     # Only message found
@@ -170,10 +181,13 @@ class ParameterExtractor:
         
         # Extract contact name if not found
         if "contact" not in params:
-            contact_match = re.search(r'(?:to|message)\s+([A-Za-z\s]+?)(?:\s+on|\s+saying|$)', command)
+            contact_match = re.search(r'(?:to|message)\s+([A-Za-z\s]+?)\s*(?:on\s+whats?\s*app|\s+saying|$)', command, re.IGNORECASE)
             if contact_match:
-                params["contact"] = contact_match.group(1).strip()
-                confidence += 0.2
+                contact = _clean_contact(contact_match.group(1))
+                if contact:
+                    params["contact"] = contact
+                    params["target"] = contact
+                    confidence += 0.2
         
         return params, min(confidence, 1.0)
     

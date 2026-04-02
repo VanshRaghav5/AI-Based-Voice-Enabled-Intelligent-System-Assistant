@@ -134,6 +134,41 @@ class TestWindowDetection:
         
         # Assert
         assert result is False
+
+    @patch('backend.automation.window_detection.gw')
+    def test_focus_window_success(self, mock_gw):
+        """Focus should succeed when activation works and active window matches."""
+        from backend.automation.window_detection import window_detector
+
+        mock_window = MagicMock()
+        mock_window.title = "WhatsApp"
+        mock_window.isMinimized = False
+        mock_window.activate.return_value = None
+        mock_gw.getWindowsWithTitle.return_value = [mock_window]
+        mock_gw.getActiveWindow.return_value = mock_window
+
+        result = window_detector.focus_window("WhatsApp")
+
+        assert result is True
+        mock_window.activate.assert_called_once()
+
+    @patch('backend.automation.window_detection.gw')
+    def test_focus_window_tolerates_windows_zero_error(self, mock_gw):
+        """Focus should soft-succeed on known Windows code-0 false negative."""
+        from backend.automation.window_detection import window_detector
+
+        mock_window = MagicMock()
+        mock_window.title = "WhatsApp"
+        mock_window.isMinimized = False
+        mock_window.activate.side_effect = Exception(
+            "Error code from Windows: 0 - The operation completed successfully."
+        )
+        mock_gw.getWindowsWithTitle.return_value = [mock_window]
+        mock_gw.getAllTitles.return_value = ["WhatsApp", "Chrome"]
+
+        result = window_detector.focus_window("WhatsApp")
+
+        assert result is True
     
     def test_window_detection_fallback_when_lib_missing(self):
         """Test window detection handles missing pygetwindow gracefully."""

@@ -1,0 +1,74 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.10.0, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\ax813\AppData\Local\Programs\Python\Python310\python.exe
+cachedir: .pytest_cache
+rootdir: D:\AI Based Voice Intelligent System\AI-Based-Voice-Enabled-Intelligent-System-Assistant
+configfile: pytest.ini
+plugins: anyio-4.12.1, cov-7.0.0
+collecting ... collected 17 items
+
+tests/test_openclaw_integration.py::TestOpenClawClient::test_empty_input_returns_error PASSED [  5%]
+tests/test_openclaw_integration.py::TestOpenClawClient::test_missing_api_key_returns_error PASSED [ 11%]
+tests/test_openclaw_integration.py::TestOpenClawClient::test_success_response PASSED [ 17%]
+tests/test_openclaw_integration.py::TestOpenClawClient::test_timeout_returns_error PASSED [ 23%]
+tests/test_openclaw_integration.py::TestOpenClawClient::test_auth_failure_returns_error PASSED [ 29%]
+tests/test_openclaw_integration.py::TestResponseParser::test_normal_response PASSED [ 35%]
+tests/test_openclaw_integration.py::TestResponseParser::test_action_response PASSED [ 41%]
+tests/test_openclaw_integration.py::TestResponseParser::test_tool_call_format PASSED [ 47%]
+tests/test_openclaw_integration.py::TestResponseParser::test_error_status PASSED [ 52%]
+tests/test_openclaw_integration.py::TestResponseParser::test_non_dict_input PASSED [ 58%]
+tests/test_openclaw_integration.py::TestResponseParser::test_empty_data PASSED [ 64%]
+tests/test_openclaw_integration.py::TestResponseParser::test_action_missing_tool_falls_back PASSED [ 70%]
+tests/test_openclaw_integration.py::TestResponseParser::test_choices_format PASSED [ 76%]
+tests/test_openclaw_integration.py::TestController::test_empty_input PASSED [ 82%]
+tests/test_openclaw_integration.py::TestController::test_normal_response_flow PASSED [ 88%]
+tests/test_openclaw_integration.py::TestController::test_action_response_flow PASSED [ 94%]
+tests/test_openclaw_integration.py::TestController::test_error_from_client PASSED [100%]
+
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.10.0-final-0 _______________
+
+Name                                         Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------
+backend\__init__.py                              1      0   100%
+backend\agents\__init__.py                       0      0   100%
+backend\agents\intent_agent.py                  14     14     0%   2-37
+backend\agents\planner_agent.py                 19     19     0%   2-60
+backend\agents\safety_agent.py                  27     27     0%   2-64
+backend\agents\tool_agent.py                    17     17     0%   2-45
+backend\api_service.py                         761    761     0%   8-1638
+backend\auth\__init__.py                         2      2     0%   3-5
+backend\auth\auth_service.py                   173    173     0%   3-370
+backend\config\__init__.py                       0      0   100%
+backend\config\assistant_config.py              46     46     0%   1-74
+backend\config\logger.py                        15      2    87%   15-17
+backend\config\secrets.py                       45     45     0%   7-80
+backend\config\settings.py                      44     44     0%   1-100
+backend\core\controller.py                      36      6    83%   39-41, 53-54, 122
+backend\core\response_parser.py                 65      8    88%   72-76, 117, 119, 127, 197-198, 200
+backend\database\__init__.py                    40     40     0%   3-85
+backend\database\models.py                      67     67     0%   3-104
+backend\integration\__init__.py                  0      0   100%
+backend\integration\openclaw_client.py          70     12    83%   143-144, 149-152, 157-160, 181-189
+backend\llm\__init__.py                          0      0   100%
+backend\llm\intent_agent.py                     18     18     0%   1-35
+backend\llm\llm_client.py                     1091   1091     0%   1-2093
+backend\llm\parameter_extractor.py             200    200     0%   8-379
+backend\llm\parameter_validator.py             178    178     0%   8-307
+backend\memory\__init__.py                       0      0   100%
+backend\memory\command_processor.py             46     46     0%   1-103
+backend\memory\memory_store.py                  30     30     0%   1-41
+backend\memory\session_state.py                125    125     0%   1-167
+backend\memory\state_schema.py                  13     13     0%   1-21
+backend\middleware\__init__.py                   3      3     0%   3-6
+backend\middleware\auth_middleware.py           52     52     0%   3-123
+backend\middleware\validation.py                71     71     0%   3-191
+backend\scheduling\__init__.py                   0      0   100%
+backend\scheduling\natural_language.py          68     68     0%   1-108
+backend\scheduling\task_scheduler.py           157    157     0%   1-249
+backend\voice_engine\__init__.py                 0      0   100%
+backend\voice_engine\audio_pipeline.py          78     78     0%   1-154
+backend\voice_engine\wake_word_detector.py     165    165     0%   8-297
+--------------------------------------------------------------------------
+TOTAL                                         3737   3578     4%
+Coverage HTML written to dir htmlcov
+============================= 17 passed in 2.05s ==============================
