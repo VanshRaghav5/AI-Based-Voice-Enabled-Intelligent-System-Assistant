@@ -174,7 +174,7 @@ def get_controller() -> "AssistantController":
 
 # Cache for recent commands to avoid duplicate processing
 _command_cache = {}
-_cache_timeout = 4.0  # short-term cache for duplicate commands
+_cache_timeout = float(assistant_config.get("api.command_cache_ttl_seconds", 1.5))
 _socket_users: Dict[str, Dict[str, Any]] = {}
 
 
@@ -448,7 +448,11 @@ def start_wake_word():
             return jsonify({'message': 'Wake word detection already active', **wake_word_detector.status_snapshot()}), 200
         
         wake_word_detector.start()
-        time.sleep(0.15)
+        deadline = time.time() + 0.15
+        while time.time() < deadline:
+            if wake_word_detector.status_snapshot().get("active"):
+                break
+            time.sleep(0.02)
         status = wake_word_detector.status_snapshot()
 
         if not status.get("active"):
@@ -1439,16 +1443,16 @@ def voice_loop(one_shot: bool = True, trigger: str = "manual"):
 
                 # Speak the response after result emission for faster UI feedback
                 speak(response)
-                
-                # Wait after speaking to prevent microphone from picking up TTS audio
-                # This prevents feedback loop where mic captures speaker output
-                logger.debug("[Voice Loop] Pausing to prevent TTS feedback...")
-                time.sleep(max(0.2, VOICE_RESPONSE_COOLDOWN_SECONDS))
 
                 if one_shot:
                     logger.info("[Voice Loop] One-shot session complete")
                     is_listening = False
                     break
+                
+                # Wait after speaking to prevent microphone from picking up TTS audio
+                # This prevents feedback loop where mic captures speaker output
+                logger.debug("[Voice Loop] Pausing to prevent TTS feedback...")
+                time.sleep(max(0.0, VOICE_RESPONSE_COOLDOWN_SECONDS))
                 
         except KeyboardInterrupt:
             logger.info("[Voice Loop] Interrupted")

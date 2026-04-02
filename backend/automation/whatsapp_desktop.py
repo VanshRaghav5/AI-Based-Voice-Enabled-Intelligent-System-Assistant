@@ -17,8 +17,9 @@ from backend.config.logger import logger
 
 
 WHATSAPP_WINDOW_NAME = "WhatsApp"
-WHATSAPP_BOOT_TIMEOUT = 16
-CONTACT_OPEN_ATTEMPTS = 3
+WHATSAPP_BOOT_TIMEOUT = 18
+CONTACT_OPEN_ATTEMPTS = 4
+SEARCH_SETTLE_SECONDS = 1.6
 
 
 def _feedback_for_exception(error: Exception, *, target: str) -> dict:
@@ -267,51 +268,53 @@ def _click_relative(x_ratio: float, y_ratio: float, double: bool = False) -> boo
 def _focus_and_prime_ui() -> None:
     """Bring WhatsApp to front and close transient overlays."""
     _focus_whatsapp()
+    _sleep(0.35)
+    _press_key("esc")
     _sleep(0.20)
     _press_key("esc")
-    _sleep(0.10)
+    _sleep(0.15)
 
 
 def _open_new_chat_dialog() -> None:
     """Open WhatsApp new-chat picker where contact search is deterministic."""
     _send_hotkey("ctrl", "n")
-    _sleep(0.70)
+    _sleep(0.90)
 
 
 def _open_search_box() -> None:
     """Open left-side search box via keyboard only."""
     _send_hotkey("ctrl", "k")
-    _sleep(0.45)
+    _sleep(0.60)
 
 
 def _clear_search_box() -> None:
     _send_hotkey("ctrl", "a")
-    _sleep(0.12)
+    _sleep(0.15)
     _press_key("backspace")
-    _sleep(0.12)
+    _sleep(0.15)
 
 
 def _search_contact(contact_name: str) -> None:
     _open_search_box()
     _clear_search_box()
     _paste_text(contact_name)
-    _sleep(1.20)
+    _sleep(SEARCH_SETTLE_SECONDS)
 
 
 def _search_contact_in_new_chat(contact_name: str) -> None:
     _open_new_chat_dialog()
     _clear_search_box()
     _paste_text(contact_name)
-    _sleep(1.10)
+    _sleep(SEARCH_SETTLE_SECONDS)
 
 
 def _open_first_result_with_mouse() -> bool:
     """Attempt to open first visible result in left pane by clicking likely rows."""
-    candidate_rows = [0.52, 0.58, 0.64, 0.70]
+    candidate_rows = [0.20, 0.26, 0.32, 0.38]
 
     for row in candidate_rows:
         if _click_relative(0.22, row, double=True):
-            _sleep(0.40)
+            _sleep(0.55)
             return True
 
     return False
@@ -320,13 +323,18 @@ def _open_first_result_with_mouse() -> bool:
 def _open_first_result_with_keyboard() -> None:
     """Fallback keyboard navigation from search box to first result row."""
     _press_key("down")
-    _sleep(0.20)
+    _sleep(0.25)
     _press_key("enter")
-    _sleep(0.80)
+    _sleep(1.0)
 
 
 def _open_chat_by_contact(contact_name: str) -> None:
-    """Open a chat by searching contact name from WhatsApp chat search."""
+    """Open a chat by searching contact in the new-chat picker (Ctrl+N).
+
+    Rationale:
+    - Ctrl+K can route focus to global/calls search in some WhatsApp builds.
+    - Ctrl+N opens the contact picker with predictable search focus.
+    """
     resolved_contact = (contact_name or "").strip()
     if not resolved_contact:
         raise AutomationError(
@@ -341,18 +349,22 @@ def _open_chat_by_contact(contact_name: str) -> None:
             logger.info(f"[WhatsApp] Opening contact '{resolved_contact}' (attempt {attempt})")
             _focus_and_prime_ui()
 
+            variants = _contact_search_variants(resolved_contact)
             opened = False
-            for variant in _contact_search_variants(resolved_contact):
+
+            for variant in variants:
                 _search_contact_in_new_chat(variant)
 
-                # Open the currently matched contact directly.
-                # Do not force Down-to-top-row selection: that can open unrelated chats.
+                # Navigate to first search result.
+                _press_key("down")
+                _sleep(0.30)
                 _press_key("enter")
-                _sleep(0.80)
+                _sleep(1.0)
 
-                # Some builds require a second confirm Enter, still without moving selection.
+                # Some WhatsApp builds need a second Enter to confirm.
                 _press_key("enter")
-                _sleep(0.55)
+                _sleep(0.60)
+
                 opened = True
                 break
 
@@ -363,12 +375,12 @@ def _open_chat_by_contact(contact_name: str) -> None:
                 )
 
             _focus_whatsapp()
-            _sleep(0.25)
+            _sleep(0.35)
             return
         except Exception as e:
             last_error = e
             logger.warning(f"[WhatsApp] Contact open attempt {attempt} failed: {e}")
-            _sleep(0.40)
+            _sleep(0.50)
 
     raise AutomationError(
         f"Failed to open chat for {resolved_contact}",
@@ -380,17 +392,18 @@ def _open_chat_by_contact(contact_name: str) -> None:
 def _focus_message_composer() -> None:
     """Focus chat composer without leaving the opened conversation."""
     _focus_whatsapp()
-    _sleep(0.10)
+    _sleep(0.20)
 
-    # Click composer in right pane. This is safer than ESC chaining,
-    # which can back out of the just-opened contact flow.
-    if _click_relative(0.72, 0.94):
-        _sleep(0.12)
-        return
+    # Click composer area in the right pane.
+    # Try a few vertical positions to account for different chat layouts.
+    for y_ratio in (0.94, 0.92, 0.90):
+        if _click_relative(0.72, y_ratio):
+            _sleep(0.25)
+            return
 
     # Keyboard fallback when click is unavailable.
     _press_key("tab")
-    _sleep(0.10)
+    _sleep(0.20)
 
 
 def _send_message_in_active_chat(message: str) -> None:
@@ -400,13 +413,13 @@ def _send_message_in_active_chat(message: str) -> None:
         raise AutomationError("Missing message", "I need the message text before I can send it.")
 
     _focus_whatsapp()
-    _sleep(0.10)
+    _sleep(0.20)
     _focus_message_composer()
 
     _paste_text(resolved_message)
-    _sleep(0.20)
+    _sleep(0.30)
     _press_key("enter")
-    _sleep(0.45)
+    _sleep(0.60)
 
 
 def send_whatsapp_message(target: str, message: str) -> None:
@@ -426,7 +439,16 @@ def send_whatsapp_message(target: str, message: str) -> None:
             "I need the message text before I can send it.",
         )
 
-    logger.info(f"[WhatsApp] Sending message to '{resolved_target}'")
+    # Sanitize message: strip leftover command residue like
+    # "send hello to John on whatsapp" → "hello"
+    resolved_message = _normalize_message_for_target(resolved_message, resolved_target)
+    if not resolved_message:
+        raise AutomationError(
+            "Missing message",
+            "After cleaning up the command, the message text is empty. Please specify what to send.",
+        )
+
+    logger.info(f"[WhatsApp] Sending message to '{resolved_target}': '{resolved_message}'")
 
     # Strategy A: phone target via URI deep-link.
     if _looks_like_phone_target(resolved_target):
@@ -438,7 +460,9 @@ def send_whatsapp_message(target: str, message: str) -> None:
         _focus_and_prime_ui()
 
         # Some clients prefill text but do not auto-send.
+        _sleep(0.50)
         _press_key("enter")
+        _sleep(0.40)
         logger.info("[WhatsApp] Message dispatched via phone deep-link")
         return
 
@@ -446,7 +470,7 @@ def send_whatsapp_message(target: str, message: str) -> None:
     _open_whatsapp_protocol("whatsapp:")
     _wait_for_whatsapp(timeout=WHATSAPP_BOOT_TIMEOUT)
     _focus_and_prime_ui()
-    _sleep(1.00)
+    _sleep(1.20)
 
     _open_chat_by_contact(resolved_target)
     _send_message_in_active_chat(resolved_message)
@@ -462,9 +486,12 @@ class WhatsAppSendTool(BaseTool):
 
     def execute(self, target: str = None, message: str = None, contact: str = None, data: str = None, body: str = None):
         resolved_target = (target or contact or "").strip()
-        resolved_message = _normalize_message_for_target((message or data or body or "").strip(), resolved_target)
-        target_norm = " ".join(resolved_target.lower().split())
-        message_norm = " ".join(resolved_message.lower().split())
+        raw_message = (message or data or body or "").strip()
+        resolved_message = _normalize_message_for_target(raw_message, resolved_target)
+
+        # Fallback: if normalization ate the entire message, use the raw input.
+        if not resolved_message and raw_message:
+            resolved_message = raw_message
 
         if not resolved_target:
             return {
@@ -489,7 +516,16 @@ class WhatsAppSendTool(BaseTool):
             }
 
         # Safety: block likely parser swap where message becomes the contact name.
-        if target_norm and message_norm and target_norm == message_norm and not _looks_like_phone_target(resolved_target):
+        # Only trigger when the raw (pre-normalized) values are identical, not after
+        # aggressive lowering which can cause false positives on short strings.
+        raw_target_norm = " ".join(resolved_target.lower().split())
+        raw_message_norm = " ".join(raw_message.lower().split())
+        if (
+            raw_target_norm
+            and raw_message_norm
+            and raw_target_norm == raw_message_norm
+            and not _looks_like_phone_target(resolved_target)
+        ):
             return {
                 "status": "error",
                 "message": (
