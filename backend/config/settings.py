@@ -77,7 +77,7 @@ TTS_VOICE_CATALOG = dict(assistant_config.get("tts.voice_catalog", {}))
 # ==============================
 
 VOICE_RESPONSE_COOLDOWN_SECONDS = float(
-	assistant_config.get("voice.response_cooldown_seconds", 0.35)
+	assistant_config.get("voice.response_cooldown_seconds", 0.1)
 )
 
 
@@ -86,9 +86,9 @@ VOICE_RESPONSE_COOLDOWN_SECONDS = float(
 # ==============================
 
 LLM_MODEL = assistant_config.get("llm.model", "qwen2.5:7b-instruct-q4_0")
-LLM_TIMEOUT_SECONDS = int(assistant_config.get("llm.timeout_seconds", 15))
+LLM_TIMEOUT_SECONDS = int(assistant_config.get("llm.timeout_seconds", 8))
 LLM_FAST_ROUTER_ENABLED = bool(assistant_config.get("llm.fast_router_enabled", True))
-LLM_MAX_AGENT_ITERATIONS = int(assistant_config.get("llm.max_agent_iterations", 3))
+LLM_MAX_AGENT_ITERATIONS = int(assistant_config.get("llm.max_agent_iterations", 2))
 
 
 # ==============================

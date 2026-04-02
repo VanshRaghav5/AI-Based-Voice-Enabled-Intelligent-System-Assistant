@@ -83,15 +83,51 @@ class WindowDetector:
                 return True
             
             windows = gw.getWindowsWithTitle(window_title_part)
-            if windows:
-                window = windows[0]
-                window.activate()
-                time.sleep(0.5)
-                logger.info(f"Focused window: {window.title}")
-                return True
-            else:
+            if not windows:
                 logger.warning(f"Could not find window to focus: {window_title_part}")
                 return False
+
+            window = windows[0]
+
+            try:
+                if getattr(window, "isMinimized", False):
+                    window.restore()
+                    time.sleep(0.25)
+
+                window.activate()
+                time.sleep(0.40)
+            except Exception as activate_error:
+                err_text = str(activate_error).lower()
+
+                # Windows/pygetwindow can throw this noisy false-negative even when
+                # the window is present and focused. Treat as soft failure.
+                if "error code from windows: 0" in err_text:
+                    logger.warning(
+                        "Window activate reported Windows code 0; treating as soft focus failure and continuing"
+                    )
+                    return WindowDetector.is_window_active(window_title_part, timeout=1)
+
+                logger.error(f"Window focus error: {activate_error}")
+                return False
+
+            try:
+                active = gw.getActiveWindow()
+                active_title = getattr(active, "title", "") if active else ""
+            except Exception:
+                active_title = ""
+
+            if active_title and window_title_part.lower() in active_title.lower():
+                logger.info(f"Focused window: {active_title}")
+                return True
+
+            # Some environments block active-window introspection; if the target
+            # window exists after activation, continue optimistically.
+            if WindowDetector.is_window_active(window_title_part, timeout=1):
+                logger.info(f"Focused window (presence-verified): {window.title}")
+                return True
+
+            logger.warning(f"Window focus verification failed: {window_title_part}")
+            return False
                 
         except Exception as e:
             logger.error(f"Window focus error: {e}")
