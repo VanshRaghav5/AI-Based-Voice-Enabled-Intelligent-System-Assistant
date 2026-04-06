@@ -13,9 +13,9 @@ from sqlalchemy.pool import StaticPool
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-from backend.auth.auth_service import AuthService, PasswordHasher
-from backend.database import Base
-from backend.database.models import PasswordResetToken, Session as SessionModel
+from backend.api.controllers.auth_service import AuthService, PasswordHasher
+from backend.models.database import Base
+from backend.models.models import PasswordResetToken, Session as SessionModel
 
 
 @pytest.fixture

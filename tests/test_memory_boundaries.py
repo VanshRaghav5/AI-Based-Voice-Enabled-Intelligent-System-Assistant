@@ -5,8 +5,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 
-from backend.memory.command_processor import MemoryCommandProcessor
-from backend.memory.session_state import SessionState
+from backend.core.memory.command_processor import MemoryCommandProcessor
+from backend.core.memory.session_state import SessionState
 
 
 class FakeMemoryStore:
@@ -29,7 +29,7 @@ class FakeMemoryStore:
 
 
 def test_session_state_get_state_returns_snapshot(monkeypatch, tmp_path):
-    monkeypatch.setattr("backend.memory.session_state.assistant_config.get", lambda key, default=None: {
+    monkeypatch.setattr("backend.core.memory.session_state.assistant_config.get", lambda key, default=None: {
         "memory.enabled": True,
         "memory.max_history": 200,
         "memory.file": str(tmp_path / "session.json"),

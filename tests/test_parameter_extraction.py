@@ -13,7 +13,7 @@ class TestParameterExtractor:
     
     def test_extractor_initialization(self):
         """Test parameter extractor can be initialized."""
-        from backend.llm.parameter_extractor import ParameterExtractor
+        from backend.services.llm.parameter_extractor import ParameterExtractor
         extractor = ParameterExtractor()
         
         assert extractor is not None
@@ -21,7 +21,7 @@ class TestParameterExtractor:
     
     def test_extract_file_path(self):
         """Test extracting file path from command."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "open file C:/Users/test.txt",
@@ -34,7 +34,7 @@ class TestParameterExtractor:
     
     def test_extract_whatsapp_message_and_contact(self):
         """Test extracting WhatsApp message and contact."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "send 'hello world' to John on WhatsApp",
@@ -49,7 +49,7 @@ class TestParameterExtractor:
     
     def test_extract_email_parameters(self):
         """Test extracting email parameters."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "send email to user@example.com subject 'Test' body 'Hello'",
@@ -63,7 +63,7 @@ class TestParameterExtractor:
 
     def test_extract_email_unquoted_subject_and_body(self):
         """Unquoted email subject/body should be extracted from natural phrasing."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
 
         params, confidence = parameter_extractor.extract(
             "send email to user@example.com subject sprint update body deployment completed",
@@ -76,7 +76,7 @@ class TestParameterExtractor:
     
     def test_extract_volume_step(self):
         """Test extracting volume step parameter."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "volume up 15",
@@ -89,7 +89,7 @@ class TestParameterExtractor:
     
     def test_extract_browser_url(self):
         """Test extracting browser URL."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "open url google.com",
@@ -101,7 +101,7 @@ class TestParameterExtractor:
 
     def test_extract_browser_url_without_url_keyword(self):
         """Natural phrasing like 'open github.com' should still extract URL."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
 
         params, confidence = parameter_extractor.extract(
             "open github.com/docs",
@@ -113,7 +113,7 @@ class TestParameterExtractor:
     
     def test_extract_search_query(self):
         """Test extracting search query."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "search for Python tutorials",
@@ -125,7 +125,7 @@ class TestParameterExtractor:
 
     def test_extract_multiword_search_query(self):
         """Multi-word search queries should not be truncated at first space."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
 
         params, confidence = parameter_extractor.extract(
             "search for python decorators tutorial",
@@ -137,7 +137,7 @@ class TestParameterExtractor:
 
     def test_extract_lookup_style_search_query(self):
         """Lookup phrasing should map to a usable search query."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
 
         params, confidence = parameter_extractor.extract(
             "look up latest ai safety papers on google",
@@ -149,7 +149,7 @@ class TestParameterExtractor:
 
     def test_extract_multiword_app_name(self):
         """App extraction should keep multi-word app names."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
 
         params, confidence = parameter_extractor.extract(
             "launch visual studio code",
@@ -161,7 +161,7 @@ class TestParameterExtractor:
     
     def test_extract_file_move_params(self):
         """Test extracting source and destination for file move."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "move file from C:/old.txt to C:/new.txt",
@@ -175,7 +175,7 @@ class TestParameterExtractor:
     
     def test_get_missing_parameters(self):
         """Test identifying missing parameters."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         # WhatsApp requires message and contact
         extracted = {"message": "hello"}
@@ -186,7 +186,7 @@ class TestParameterExtractor:
     
     def test_extract_unknown_tool_returns_low_confidence(self):
         """Test extracting for unknown tool returns low confidence."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "do something",
@@ -201,7 +201,7 @@ class TestParameterExtractionEdgeCases:
     
     def test_extract_from_empty_command(self):
         """Test extraction from empty command."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract("", "file.open")
         
@@ -210,7 +210,7 @@ class TestParameterExtractionEdgeCases:
     
     def test_extract_path_with_spaces(self):
         """Test extracting path with spaces."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             'open file "C:/My Documents/test file.txt"',
@@ -222,7 +222,7 @@ class TestParameterExtractionEdgeCases:
     
     def test_extract_multiple_numbers_picks_first(self):
         """Test volume extraction with multiple numbers."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "volume up 5 times by 10",
@@ -235,7 +235,7 @@ class TestParameterExtractionEdgeCases:
     
     def test_extract_whatsapp_message_only(self):
         """Test extracting WhatsApp message without contact."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         params, confidence = parameter_extractor.extract(
             "send 'hello' on WhatsApp",
@@ -248,7 +248,7 @@ class TestParameterExtractionEdgeCases:
 
     def test_extract_unquoted_whatsapp_message_and_contact(self):
         """Unquoted WhatsApp command should keep message/contact separated."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
 
         params, confidence = parameter_extractor.extract(
             "send testing to vansh on whatsapp",
@@ -261,7 +261,7 @@ class TestParameterExtractionEdgeCases:
     
     def test_normalize_path_converts_slashes(self):
         """Test path normalization converts forward slashes."""
-        from backend.llm.parameter_extractor import parameter_extractor
+        from backend.services.llm.parameter_extractor import parameter_extractor
         
         # Extract path with forward slashes
         params, _ = parameter_extractor.extract(
