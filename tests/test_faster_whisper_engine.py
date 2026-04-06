@@ -3,10 +3,10 @@ Tests for the faster-whisper STT engine.
 
 Covers:
   - Model loading (mocked)
-  - transcribe_audio() — file-based path
-  - transcribe_numpy() — in-memory zero-latency path
-  - _to_float32_mono() — dtype normalisation + resampling
-  - _apply_text_corrections() — regex substitutions
+  - transcribe_audio() â€” file-based path
+  - transcribe_numpy() â€” in-memory zero-latency path
+  - _to_float32_mono() â€” dtype normalisation + resampling
+  - _apply_text_corrections() â€” regex substitutions
   - Edge cases: missing file, silent audio, too-short clip
   - Live smoke test with a synthetic 16-kHz sine-wave WAV
 """
@@ -43,14 +43,14 @@ def _make_sine_array(freq: float = 440.0, duration: float = 1.5,
 
 
 # ---------------------------------------------------------------------------
-# _to_float32_mono — dtype + channel + resample normalisation
+# _to_float32_mono â€” dtype + channel + resample normalisation
 # ---------------------------------------------------------------------------
 
 class TestToFloat32Mono:
     """Unit tests for the internal audio normalisation helper."""
 
     def setup_method(self):
-        from backend.voice_engine.stt.faster_whisper_engine import _to_float32_mono
+        from backend.services.voice.stt.faster_whisper_engine import _to_float32_mono
         self._fn = _to_float32_mono
 
     def test_int16_normalisation(self):
@@ -70,7 +70,7 @@ class TestToFloat32Mono:
         audio = np.array([128, 255, 0], dtype=np.uint8)
         result, sr = self._fn(audio, SAMPLE_RATE)
         assert result.dtype == np.float32
-        assert abs(result[0]) < 0.01   # 128 → ~0.0
+        assert abs(result[0]) < 0.01   # 128 â†’ ~0.0
 
     def test_float32_passthrough(self):
         audio = np.array([0.0, 0.5, -0.5], dtype=np.float32)
@@ -90,7 +90,7 @@ class TestToFloat32Mono:
         audio = np.zeros(int(orig_sr * 1.0), dtype=np.int16)
         result, sr = self._fn(audio, orig_sr)
         assert sr == SAMPLE_RATE
-        # Expected output length ≈ 16000 samples (±5%)
+        # Expected output length â‰ˆ 16000 samples (Â±5%)
         assert abs(len(result) - SAMPLE_RATE) < SAMPLE_RATE * 0.05
 
     def test_already_16k_unchanged_sr(self):
@@ -108,7 +108,7 @@ class TestApplyTextCorrections:
     """Unit tests for the transcript correction helper."""
 
     def setup_method(self):
-        from backend.voice_engine.stt.faster_whisper_engine import _apply_text_corrections
+        from backend.services.voice.stt.faster_whisper_engine import _apply_text_corrections
         self._fn = _apply_text_corrections
 
     def test_empty_string_returns_empty(self):
@@ -123,7 +123,7 @@ class TestApplyTextCorrections:
         assert result == "hello world"
 
     def test_correction_applied(self):
-        """Configured correction 'swam' → 'Swayam' should fire."""
+        """Configured correction 'swam' â†’ 'Swayam' should fire."""
         result = self._fn("I am swam here")
         assert "Swayam" in result
 
@@ -145,7 +145,7 @@ class TestPreprocessForNoise:
     """Unit tests for denoise + normalization preprocessing."""
 
     def setup_method(self):
-        from backend.voice_engine.stt.faster_whisper_engine import _preprocess_for_noise
+        from backend.services.voice.stt.faster_whisper_engine import _preprocess_for_noise
         self._fn = _preprocess_for_noise
 
     def test_empty_audio_passthrough(self):
@@ -154,7 +154,7 @@ class TestPreprocessForNoise:
         assert result.size == 0
 
     def test_normalizes_peak_and_removes_dc_bias(self, monkeypatch):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         monkeypatch.setattr(eng, "WHISPER_ENABLE_DENOISE", False, raising=False)
         monkeypatch.setattr(eng, "WHISPER_PREEMPHASIS_ALPHA", 0.0, raising=False)
         monkeypatch.setattr(eng, "WHISPER_NORMALIZE_TARGET_PEAK", 0.5, raising=False)
@@ -166,7 +166,7 @@ class TestPreprocessForNoise:
         assert abs(float(np.mean(result))) < 0.05
 
     def test_denoise_gate_suppresses_weak_noise(self, monkeypatch):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         monkeypatch.setattr(eng, "WHISPER_ENABLE_DENOISE", True, raising=False)
         monkeypatch.setattr(eng, "WHISPER_DENOISE_NOISE_PERCENTILE", 35.0, raising=False)
         monkeypatch.setattr(eng, "WHISPER_DENOISE_GATE_MULTIPLIER", 2.0, raising=False)
@@ -185,22 +185,22 @@ class TestPreprocessForNoise:
 
 class TestFasterWhisperModelLoad:
 
-    @patch("backend.voice_engine.stt.faster_whisper_engine.WhisperModel")
+    @patch("backend.services.voice.stt.faster_whisper_engine.WhisperModel")
     def test_load_sets_global_model(self, mock_cls):
         mock_instance = MagicMock()
         mock_cls.return_value = mock_instance
 
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = None  # force reload
         result = eng.load_whisper_model()
 
         assert result is mock_instance
         assert eng.model is mock_instance
 
-    @patch("backend.voice_engine.stt.faster_whisper_engine.WhisperModel",
+    @patch("backend.services.voice.stt.faster_whisper_engine.WhisperModel",
            side_effect=RuntimeError("CUDA OOM"))
     def test_load_failure_returns_none(self, mock_cls):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = None
         result = eng.load_whisper_model()
         assert result is None
@@ -208,7 +208,7 @@ class TestFasterWhisperModelLoad:
 
 
 # ---------------------------------------------------------------------------
-# transcribe_audio() — file-based path
+# transcribe_audio() â€” file-based path
 # ---------------------------------------------------------------------------
 
 class TestTranscribeAudio:
@@ -229,14 +229,14 @@ class TestTranscribeAudio:
     def test_transcribes_valid_wav(self, tmp_path):
         wav_path = _make_sine_wav(str(tmp_path / "test.wav"))
 
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model("set volume to 50")
 
         result = eng.transcribe_audio(wav_path)
         assert result == "set volume to 50"
 
     def test_missing_file_returns_empty(self):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model()
 
         result = eng.transcribe_audio("/nonexistent/path/audio.wav")
@@ -245,7 +245,7 @@ class TestTranscribeAudio:
     def test_model_none_returns_empty(self, tmp_path):
         wav_path = _make_sine_wav(str(tmp_path / "test.wav"))
 
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = None
 
         result = eng.transcribe_audio(wav_path)
@@ -254,7 +254,7 @@ class TestTranscribeAudio:
     def test_corrections_applied(self, tmp_path):
         wav_path = _make_sine_wav(str(tmp_path / "test.wav"))
 
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model("call swam please")
 
         result = eng.transcribe_audio(wav_path, apply_corrections=True)
@@ -263,7 +263,7 @@ class TestTranscribeAudio:
     def test_corrections_skipped_when_disabled(self, tmp_path):
         wav_path = _make_sine_wav(str(tmp_path / "test.wav"))
 
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model("call swam please")
 
         result = eng.transcribe_audio(wav_path, apply_corrections=False)
@@ -279,7 +279,7 @@ class TestTranscribeAudio:
             info = MagicMock(); info.language = "fr"; info.language_probability = 0.9
             return iter([seg]), info
 
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = MagicMock()
         eng.model.transcribe.side_effect = fake_transcribe
 
@@ -288,7 +288,7 @@ class TestTranscribeAudio:
 
 
 # ---------------------------------------------------------------------------
-# transcribe_numpy() — in-memory zero-latency path
+# transcribe_numpy() â€” in-memory zero-latency path
 # ---------------------------------------------------------------------------
 
 class TestTranscribeNumpy:
@@ -301,7 +301,7 @@ class TestTranscribeNumpy:
         return mock_model
 
     def test_transcribes_int16_array(self):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model("open youtube")
 
         audio = _make_sine_array()
@@ -309,7 +309,7 @@ class TestTranscribeNumpy:
         assert result == "open youtube"
 
     def test_model_none_returns_empty(self):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = None
 
         result = eng.transcribe_numpy(_make_sine_array(), SAMPLE_RATE)
@@ -317,7 +317,7 @@ class TestTranscribeNumpy:
 
     def test_too_short_clip_returns_empty(self):
         """Arrays shorter than 0.3 s should be silently rejected."""
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model()
 
         short = np.zeros(int(SAMPLE_RATE * 0.1), dtype=np.int16)
@@ -326,7 +326,7 @@ class TestTranscribeNumpy:
 
     def test_accepts_44100_input_resamples(self):
         """Passing 44.1 kHz array should resample and not crash."""
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model("volume up")
 
         audio_44k = (np.sin(np.linspace(0, 2 * np.pi * 440, 44100)) * 16000).astype(np.int16)
@@ -334,14 +334,14 @@ class TestTranscribeNumpy:
         assert result == "volume up"
 
     def test_corrections_applied_numpy(self):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = self._make_mock_model("hey swam how are you")
 
         result = eng.transcribe_numpy(_make_sine_array(), SAMPLE_RATE)
         assert "Swayam" in result
 
     def test_transcription_exception_returns_empty(self):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         eng.model = MagicMock()
         eng.model.transcribe.side_effect = RuntimeError("GPU exploded")
 
@@ -350,7 +350,7 @@ class TestTranscribeNumpy:
 
 
 # ---------------------------------------------------------------------------
-# Live smoke test — uses the REAL loaded model (no mocks)
+# Live smoke test â€” uses the REAL loaded model (no mocks)
 # Skipped automatically if model failed to load at import time.
 # ---------------------------------------------------------------------------
 
@@ -365,13 +365,13 @@ class TestLiveFasterWhisper:
     @pytest.fixture(autouse=True)
     def _restore_model(self):
         """Restore whatever model state was before the test."""
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         original = eng.model
         yield
         eng.model = original
 
     def test_live_transcribe_audio_does_not_crash(self, tmp_path):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         # Reload production model if it was replaced by a mock
         if eng.model is None or isinstance(eng.model, MagicMock):
             eng.load_whisper_model()
@@ -384,7 +384,7 @@ class TestLiveFasterWhisper:
         assert isinstance(result, str)
 
     def test_live_transcribe_numpy_does_not_crash(self):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         if eng.model is None or isinstance(eng.model, MagicMock):
             eng.load_whisper_model()
 
@@ -396,7 +396,7 @@ class TestLiveFasterWhisper:
         assert isinstance(result, str)
 
     def test_live_short_clip_rejected(self):
-        from backend.voice_engine.stt import faster_whisper_engine as eng
+        from backend.services.voice.stt import faster_whisper_engine as eng
         if eng.model is None or isinstance(eng.model, MagicMock):
             eng.load_whisper_model()
 

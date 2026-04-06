@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 
-from backend.core.response_formatter import ResponseFormatter
+from backend.core.execution.response_formatter import ResponseFormatter
 
 
 def test_response_formatter_rewrites_generic_success_messages():

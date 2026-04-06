@@ -9,66 +9,49 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 
 class TestToolRegistry:
-    """Test Tool Registry functionality."""
+    """Test Tool Registry functionality (Function-based)."""
     
     def test_registry_initialization(self):
         """Test tool registry can be initialized."""
         # Act
-        from backend.core.tool_registry import ToolRegistry
+        from backend.core.execution.tool_registry import ToolRegistry
         registry = ToolRegistry()
         
         # Assert
         assert registry is not None
-        assert hasattr(registry, '_tools')
+        assert hasattr(registry, 'tools')
     
-    def test_register_tool(self):
-        """Test registering a tool."""
+    def test_register_function_tool(self):
+        """Test registering a function-based tool."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
         
-        class TestTool(BaseTool):
-            name = "test.tool"
-            description = "Test tool"
-            risk_level = "low"
-            requires_confirmation = False
-            
-            def execute(self, **args):
-                return {"status": "success", "message": "Test", "data": {}}
+        def test_tool(value: str = ""):
+            return {"success": True, "message": f"Test tool called with {value}"}
         
         registry = ToolRegistry()
-        tool = TestTool()
         
         # Act
-        registry.register(tool)
+        registry.register("test.tool", test_tool)
         
         # Assert
         assert registry.get("test.tool") is not None
-        assert registry.get("test.tool") == tool
+        assert registry.get("test.tool") == test_tool
     
     def test_list_registered_tools(self):
         """Test listing registered tools."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
         
-        class Tool1(BaseTool):
-            name = "tool.one"
-            description = "First"
-            risk_level = "low"
-            requires_confirmation = False
-            def execute(self, **args): return {}
+        def tool1():
+            return {"success": True}
         
-        class Tool2(BaseTool):
-            name = "tool.two"
-            description = "Second"
-            risk_level = "low"
-            requires_confirmation = False
-            def execute(self, **args): return {}
+        def tool2():
+            return {"success": True}
         
         registry = ToolRegistry()
-        registry.register(Tool1())
-        registry.register(Tool2())
+        registry.register("tool.one", tool1)
+        registry.register("tool.two", tool2)
         
         # Act
         tools = registry.list_tools()
@@ -79,45 +62,36 @@ class TestToolRegistry:
         assert "tool.two" in tools
     
     def test_execute_tool(self):
-        """Test executing a tool through registry."""
+        """Test executing a function-based tool through registry."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.tool_call import ToolCall
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
         
-        class ExecuteTool(BaseTool):
-            name = "exec.tool"
-            description = "Execute test"
-            risk_level = "low"
-            requires_confirmation = False
-            
-            def execute(self, value):
-                return {"status": "success", "message": f"Executed with {value}", "data": {}}
+        def execute_tool(value: str = ""):
+            return {"success": True, "message": f"Executed with {value}", "data": {}}
         
         registry = ToolRegistry()
-        registry.register(ExecuteTool())
-        
-        tool_call = ToolCall(name="exec.tool", args={"value": "test123"})
+        registry.register("exec.tool", execute_tool)
         
         # Act
-        result = registry.execute(tool_call)
+        result = registry.execute("exec.tool", {"value": "test123"})
         
         # Assert
-        assert result["status"] == "success"
+        assert result["success"] == True
         assert "test123" in result["message"]
     
     def test_execute_nonexistent_tool(self):
-        """Test executing non-existent tool raises error."""
+        """Test executing non-existent tool returns error."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.tool_call import ToolCall
+        from backend.core.execution.tool_registry import ToolRegistry
         
         registry = ToolRegistry()
-        tool_call = ToolCall(name="fake.tool", args={})
         
-        # Act & Assert
-        with pytest.raises(ValueError, match="not found"):
-            registry.execute(tool_call)
+        # Act
+        result = registry.execute("fake.tool", {})
+        
+        # Assert
+        assert result["success"] == False
+        assert "error" in result
 
 
 class TestExecutor:
@@ -126,8 +100,8 @@ class TestExecutor:
     def test_executor_initialization(self):
         """Test executor can be initialized."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.executor import Executor
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.executor import Executor
         
         registry = ToolRegistry()
         
@@ -141,10 +115,10 @@ class TestExecutor:
     def test_executor_run_tool(self):
         """Test executor can run a tool."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.executor import Executor
-        from backend.core.tool_call import ToolCall
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.executor import Executor
+        from backend.core.execution.tool_call import ToolCall
+        from backend.tools.base_tool import BaseTool
         
         class RunTool(BaseTool):
             name = "run.tool"
@@ -170,9 +144,9 @@ class TestExecutor:
     def test_executor_handles_tool_error(self):
         """Test executor handles tool execution errors."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.executor import Executor
-        from backend.core.tool_call import ToolCall
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.executor import Executor
+        from backend.core.execution.tool_call import ToolCall
         
         registry = ToolRegistry()
         executor = Executor(registry)
@@ -193,8 +167,8 @@ class TestMultiExecutor:
     def test_multi_executor_initialization(self):
         """Test multi-executor can be initialized."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.multi_executor import MultiExecutor
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.multi_executor import MultiExecutor
         
         registry = ToolRegistry()
         
@@ -207,9 +181,9 @@ class TestMultiExecutor:
     def test_multi_executor_single_step(self):
         """Test multi-executor with single step plan."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.multi_executor import MultiExecutor
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.multi_executor import MultiExecutor
+        from backend.tools.base_tool import BaseTool
         
         class SingleTool(BaseTool):
             name = "single.tool"
@@ -240,9 +214,9 @@ class TestMultiExecutor:
     def test_multi_executor_multiple_steps(self):
         """Test multi-executor with multiple steps."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.multi_executor import MultiExecutor
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.multi_executor import MultiExecutor
+        from backend.tools.base_tool import BaseTool
         
         class StepTool(BaseTool):
             name = "step.tool"
@@ -275,9 +249,9 @@ class TestMultiExecutor:
     def test_multi_executor_confirmation_required(self):
         """Test multi-executor handles confirmation requirement."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.multi_executor import MultiExecutor
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.multi_executor import MultiExecutor
+        from backend.tools.base_tool import BaseTool
         
         class HighRiskTool(BaseTool):
             name = "highrisk.tool"
@@ -308,9 +282,9 @@ class TestMultiExecutor:
 
     def test_multi_executor_requires_confirmation_for_system_sleep(self):
         """System sleep should always stop for confirmation before execution."""
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.multi_executor import MultiExecutor
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.multi_executor import MultiExecutor
+        from backend.tools.base_tool import BaseTool
 
         class SleepTool(BaseTool):
             name = "system.sleep"
@@ -339,9 +313,9 @@ class TestMultiExecutor:
 
     def test_multi_executor_auto_executes_non_destructive_message_tools(self):
         """Messaging tools should run directly when they are not marked destructive."""
-        from backend.core.tool_registry import ToolRegistry
-        from backend.core.multi_executor import MultiExecutor
-        from backend.automation.base_tool import BaseTool
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.core.execution.multi_executor import MultiExecutor
+        from backend.tools.base_tool import BaseTool
 
         class WhatsAppTool(BaseTool):
             name = "whatsapp.send"
@@ -374,8 +348,8 @@ class TestToolRegistration:
     def test_register_all_tools(self):
         """Test registering all system tools."""
         # Arrange
-        from backend.core.tool_registry import ToolRegistry
-        from backend.automation.registry_tools import register_all_tools
+        from backend.core.execution.tool_registry import ToolRegistry
+        from backend.tools.dev_tools import register_all_tools
         
         registry = ToolRegistry()
         

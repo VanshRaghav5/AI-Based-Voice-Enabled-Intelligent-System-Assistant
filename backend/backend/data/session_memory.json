@@ -1,0 +1,15 @@
+{
+  "active_application": null,
+  "active_window": null,
+  "last_file_path": null,
+  "last_folder_path": null,
+  "last_contact": null,
+  "last_url": null,
+  "last_intent": null,
+  "facts": {
+    "test_key": "test_value",
+    "recall_test_key": "recall_test_value",
+    "list_test_key": "list_test_value"
+  },
+  "execution_history": []
+}

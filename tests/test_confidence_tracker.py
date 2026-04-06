@@ -9,7 +9,7 @@ import json
 import os
 import tempfile
 from datetime import datetime
-from backend.core.confidence_tracker import ConfidenceTracker, ConfidenceEntry
+from backend.core.intent.confidence_tracker import ConfidenceTracker, ConfidenceEntry
 
 
 @pytest.fixture

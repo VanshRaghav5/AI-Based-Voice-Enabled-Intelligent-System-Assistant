@@ -13,7 +13,7 @@ class TestParameterValidator:
     
     def test_validator_initialization(self):
         """Test parameter validator can be initialized."""
-        from backend.llm.parameter_validator import ParameterValidator
+        from backend.services.llm.parameter_validator import ParameterValidator
         validator = ParameterValidator()
         
         assert validator is not None
@@ -21,7 +21,7 @@ class TestParameterValidator:
     
     def test_validate_file_params_success(self):
         """Test successful file parameter validation."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"path": "C:\\Users\\test.txt"}
         result = parameter_validator.validate("file.create", params)
@@ -31,7 +31,7 @@ class TestParameterValidator:
     
     def test_validate_file_params_empty_path(self):
         """Test validation fails for empty path."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"path": ""}
         result = parameter_validator.validate("file.open", params)
@@ -42,7 +42,7 @@ class TestParameterValidator:
     
     def test_validate_whatsapp_params_success(self):
         """Test successful WhatsApp parameter validation."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"message": "Hello world", "contact": "John"}
         result = parameter_validator.validate("whatsapp.send", params)
@@ -51,7 +51,7 @@ class TestParameterValidator:
     
     def test_validate_whatsapp_empty_message(self):
         """Test validation fails for empty WhatsApp message."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"message": "", "contact": "John"}
         result = parameter_validator.validate("whatsapp.send", params)
@@ -61,7 +61,7 @@ class TestParameterValidator:
     
     def test_validate_whatsapp_missing_contact(self):
         """Test validation fails for missing contact."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"message": "Hello"}
         result = parameter_validator.validate("whatsapp.send", params)
@@ -71,7 +71,7 @@ class TestParameterValidator:
     
     def test_validate_email_params_success(self):
         """Test successful email parameter validation."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {
             "to": "user@example.com",
@@ -84,7 +84,7 @@ class TestParameterValidator:
     
     def test_validate_email_invalid_address(self):
         """Test validation fails for invalid email."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {
             "to": "not-an-email",
@@ -98,7 +98,7 @@ class TestParameterValidator:
     
     def test_validate_volume_params_success(self):
         """Test successful volume parameter validation."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"step": 10}
         result = parameter_validator.validate("system.volume.up", params)
@@ -107,7 +107,7 @@ class TestParameterValidator:
     
     def test_validate_volume_too_large(self):
         """Test validation fails for volume step too large."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"step": 100}
         result = parameter_validator.validate("system.volume.up", params)
@@ -117,7 +117,7 @@ class TestParameterValidator:
     
     def test_validate_volume_negative(self):
         """Test validation fails for negative volume."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"step": -5}
         result = parameter_validator.validate("system.volume.up", params)
@@ -126,7 +126,7 @@ class TestParameterValidator:
     
     def test_validate_browser_url_success(self):
         """Test successful URL validation."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"url": "https://google.com"}
         result = parameter_validator.validate("browser.open", params)
@@ -135,7 +135,7 @@ class TestParameterValidator:
     
     def test_validate_browser_empty_search(self):
         """Test validation fails for empty search query."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"query": ""}
         result = parameter_validator.validate("browser.search_google", params)
@@ -144,7 +144,7 @@ class TestParameterValidator:
     
     def test_validate_path_too_long(self):
         """Test validation fails for path exceeding MAX_PATH."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         long_path = "C:\\" + "a" * 300
         params = {"path": long_path}
@@ -155,7 +155,7 @@ class TestParameterValidator:
     
     def test_validate_path_invalid_characters(self):
         """Test validation fails for invalid path characters."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"path": "C:\\Users\\file<name>.txt"}
         result = parameter_validator.validate("file.open", params)
@@ -165,7 +165,7 @@ class TestParameterValidator:
     
     def test_validation_result_bool(self):
         """Test ValidationResult can be used as boolean."""
-        from backend.llm.parameter_validator import ValidationResult
+        from backend.services.llm.parameter_validator import ValidationResult
         
         valid = ValidationResult(True)
         invalid = ValidationResult(False, ["error"])
@@ -175,7 +175,7 @@ class TestParameterValidator:
     
     def test_suggest_fix_for_empty_path(self):
         """Test suggestion for empty path error."""
-        from backend.llm.parameter_validator import parameter_validator, ValidationResult
+        from backend.services.llm.parameter_validator import parameter_validator, ValidationResult
         
         params = {"path": ""}
         result = parameter_validator.validate("file.open", params)
@@ -187,7 +187,7 @@ class TestParameterValidator:
     
     def test_suggest_fix_for_invalid_email(self):
         """Test suggestion for invalid email."""
-        from backend.llm.parameter_validator import parameter_validator, ValidationResult
+        from backend.services.llm.parameter_validator import parameter_validator, ValidationResult
         
         params = {"to": "invalid"}
         result = parameter_validator.validate("email.send", params)
@@ -203,7 +203,7 @@ class TestValidationEdgeCases:
     
     def test_validate_unknown_tool_returns_valid(self):
         """Test validation passes for unknown tools."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"random": "param"}
         result = parameter_validator.validate("unknown.tool", params)
@@ -213,7 +213,7 @@ class TestValidationEdgeCases:
     
     def test_validate_file_move_missing_source(self):
         """Test validation fails when file move missing source."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"destination": "C:\\new.txt"}
         result = parameter_validator.validate("file.move", params)
@@ -223,7 +223,7 @@ class TestValidationEdgeCases:
     
     def test_validate_file_move_missing_destination(self):
         """Test validation fails when file move missing destination."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"source": "C:\\old.txt"}
         result = parameter_validator.validate("file.move", params)
@@ -233,7 +233,7 @@ class TestValidationEdgeCases:
     
     def test_validate_whatsapp_very_long_message(self):
         """Test validation fails for very long WhatsApp message."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         long_message = "a" * 6000
         params = {"message": long_message, "contact": "John"}
@@ -243,7 +243,7 @@ class TestValidationEdgeCases:
     
     def test_validate_email_warnings_not_blocking(self):
         """Test warnings don't prevent validation."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {
             "to": "user@example.com",
@@ -258,7 +258,7 @@ class TestValidationEdgeCases:
     
     def test_validate_volume_string_converted_to_int(self):
         """Test volume step string is converted to int."""
-        from backend.llm.parameter_validator import parameter_validator
+        from backend.services.llm.parameter_validator import parameter_validator
         
         params = {"step": "10"}
         result = parameter_validator.validate("system.volume.up", params)

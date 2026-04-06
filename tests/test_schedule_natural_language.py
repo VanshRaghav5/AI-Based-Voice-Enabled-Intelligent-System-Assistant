@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 
-from backend.scheduling.natural_language import parse_natural_schedule_command
+from backend.core.planner.natural_language import parse_natural_schedule_command
 
 
 def test_parse_schedule_interval_command():

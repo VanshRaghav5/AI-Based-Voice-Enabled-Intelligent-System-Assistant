@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 
-from backend.core.controller_manager import ControllerManager
+from backend.core.execution.controller_manager import ControllerManager
 
 
 class DummyController:
