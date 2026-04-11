@@ -11,9 +11,9 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 
-from backend.database import Base
-from backend.database.models import ScheduledTask, User
-from backend.scheduling.task_scheduler import TaskSchedulerService
+from backend.models.database import Base
+from backend.models.models import ScheduledTask, User
+from backend.core.planner.task_scheduler import TaskSchedulerService
 
 
 class FakeController:

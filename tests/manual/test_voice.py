@@ -11,9 +11,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from backend.voice_engine.input.recorder import record_audio_fixed, record_audio_until_silence
-from backend.voice_engine.stt.whisper_engine import transcribe_audio
-from backend.config.logger import logger
+from backend.services.voice.input.recorder import record_audio_fixed, record_audio_until_silence
+from backend.services.voice.stt.whisper_engine import transcribe_audio
+from backend.utils.logger import logger
 import sounddevice as sd
 
 def list_audio_devices():
@@ -36,21 +36,21 @@ def test_microphone():
         audio_path = record_audio_fixed(duration=3.0)
         
         if not audio_path:
-            print("❌ Failed to record audio")
+            print("âŒ Failed to record audio")
             return False
         
-        print(f"✅ Audio recorded successfully: {audio_path}")
+        print(f"âœ… Audio recorded successfully: {audio_path}")
         file_size = os.path.getsize(audio_path)
         print(f"   File size: {file_size} bytes")
         
         if file_size < 1000:
-            print("⚠️  Warning: Audio file is very small, microphone may not be working")
+            print("âš ï¸  Warning: Audio file is very small, microphone may not be working")
             return False
         
         return audio_path
         
     except Exception as e:
-        print(f"❌ Error recording audio: {e}")
+        print(f"âŒ Error recording audio: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -64,19 +64,19 @@ def test_transcription(audio_path):
         text = transcribe_audio(audio_path)
         
         if not text:
-            print("❌ Transcription returned empty text")
+            print("âŒ Transcription returned empty text")
             print("   This could mean:")
             print("   1. No speech was detected in the audio")
             print("   2. Microphone volume is too low")
             print("   3. Whisper model failed to load")
             return False
         
-        print(f"✅ Transcription successful!")
+        print(f"âœ… Transcription successful!")
         print(f"   Text: '{text}'")
         return True
         
     except Exception as e:
-        print(f"❌ Error transcribing audio: {e}")
+        print(f"âŒ Error transcribing audio: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -96,10 +96,10 @@ def test_adaptive_recording():
         audio_path = record_audio_until_silence()
         
         if not audio_path:
-            print("❌ Adaptive recording failed")
+            print("âŒ Adaptive recording failed")
             return False
         
-        print(f"✅ Adaptive recording successful: {audio_path}")
+        print(f"âœ… Adaptive recording successful: {audio_path}")
         
         # Try to transcribe
         text = transcribe_audio(audio_path)
@@ -111,7 +111,7 @@ def test_adaptive_recording():
         return True
         
     except Exception as e:
-        print(f"❌ Error in adaptive recording: {e}")
+        print(f"âŒ Error in adaptive recording: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -128,7 +128,7 @@ def main():
     # Test microphone
     audio_path = test_microphone()
     if not audio_path:
-        print("\n❌ MICROPHONE TEST FAILED")
+        print("\nâŒ MICROPHONE TEST FAILED")
         print("\nPossible issues:")
         print("1. No microphone connected")
         print("2. Microphone permissions not granted")
@@ -141,7 +141,7 @@ def main():
     
     # Test transcription
     if not test_transcription(audio_path):
-        print("\n❌ TRANSCRIPTION TEST FAILED")
+        print("\nâŒ TRANSCRIPTION TEST FAILED")
         print("\nPossible issues:")
         print("1. Whisper model not loaded")
         print("2. No speech in the recording")
@@ -152,7 +152,7 @@ def main():
     test_adaptive_recording()
     
     print("\n" + "=" * 60)
-    print("✅ VOICE MODULE TESTS COMPLETE")
+    print("âœ… VOICE MODULE TESTS COMPLETE")
     print("=" * 60)
 
 

@@ -22,7 +22,7 @@ def mock_whisper_model():
 @pytest.fixture
 def mock_tool_registry():
     """Mock tool registry for testing."""
-    from backend.core.tool_registry import ToolRegistry
+    from backend.core.execution.tool_registry import ToolRegistry
     return ToolRegistry()
 
 

@@ -1,120 +1,76 @@
-# ==================================
-# Python Virtual Environment
-# ==================================
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
 venv/
 .venv/
-.env/
+ENV/
+env/
+ml_env/
 backend/venv/
 desktop/venv/
 backend/venv_test/
-%TEMP%/
 
+# Environment and secrets
+.env
+.env.*
+*.env
 
-# ==================================
-# Python Cache / Build Files
-# ==================================
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.egg-info/
+# Test and coverage artifacts
+.pytest_cache/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Build/distribution
 build/
 dist/
+*.egg-info/
 
-# ==================================
-# Environment / Secrets
-# ==================================
-.env
-*.env
-.env.local
-.env.production
-
-# ==================================
-# Runtime Audio Output (Generated Files)
-# ==================================
+# Runtime/generated app data
 backend/data/audio/
-
-# ==================================
-# Runtime Data (Generated at Runtime)
-# ==================================
 backend/data/session_memory.json
 backend/data/delete_history.json
 backend/data/assistant.db
+backend/data/assistant.log
+backend/data/memory.json
+data/confidence_history.json
+data/confidence_history.json.bak
 
-# ==================================
-# SQLite Databases
-# ==================================
+# Databases
 *.db
 *.sqlite
 *.sqlite3
 
-# ==================================
-# Whisper / Torch Model Cache
-# ==================================
-.cache/
-
-# ==================================
-# Logs
-# ==================================
+# Logs and temp files
 logs/
 *.log
+*.tmp
+*.bak
 
-# ==================================
-# Test Coverage Reports
-# ==================================
-htmlcov/
-.coverage
-.coverage.*
-*.coverage
-coverage.xml
+# Notebook and model/cache artifacts
+.ipynb_checkpoints/
+.cache/
 
-# ==================================
-# Pytest Cache
-# ==================================
-.pytest_cache/
-.tox/
-
-# ==================================
-# IDE / Editor
-# ==================================
+# IDE/editor/OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# ==================================
-# OS Generated Files
-# ==================================
 .DS_Store
 Thumbs.db
-ehthumbs.db
 desktop.ini
 
-# ==================================
-# Piper Runtime (Binaries & Heavy Assets)
-# ==================================
-backend/voice_engine/tts/piper/*.exe
-backend/voice_engine/tts/piper/*.dll
-backend/voice_engine/tts/piper/espeak-ng-data/
-backend/voice_engine/tts/piper/pkgconfig/
-backend/voice_engine/tts/piper/*.ort
-backend/voice_engine/tts/piper/*.wav
-backend/voice_engine/tts/piper/input.txt
-
-# ==================================
-# Global Audio Files (Generated)
-# ==================================
+# Generated audio
 *.wav
 
-# ==================================
-# Miscellaneous Artifacts
-# ==================================
-*.bak
-*.tmp
-
-# ==================================
-# Local Debug / Diagnostic Artifacts
-# ==================================
+# Local debug artifacts
 dump_hang.py
 hang_dump.txt
 import_trace.txt

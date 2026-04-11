@@ -1,8 +1,8 @@
-from backend.core.assistant_controller import AssistantController
-from backend.voice_engine.audio_pipeline import listen, speak
-from backend.config.logger import logger
-from backend.config.settings import EXIT_COMMANDS
-from backend.core.persona import persona
+from backend.core.execution.assistant_controller import AssistantController
+from backend.services.voice_service import listen, speak
+from backend.utils.logger import logger
+from backend.utils.settings import EXIT_COMMANDS
+from backend.core.execution.persona import persona
 
 
 controller = AssistantController()
@@ -60,7 +60,7 @@ def run_forever():
 
             # ---- PERSONA SWITCHING ----
             if "switch persona" in normalized or "change persona" in normalized:
-                from backend.config.assistant_config import assistant_config
+                from backend.utils.assistant_config import assistant_config
                 
                 # Extract persona name from command
                 available_personas = ["butler", "professional", "friendly", "concise"]
