@@ -8,7 +8,7 @@ import pytest
 import json
 import os
 import tempfile
-from backend.core.confidence_config import ConfidenceConfig
+from backend.core.intent.confidence_config import ConfidenceConfig
 
 
 @pytest.fixture

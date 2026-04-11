@@ -10,10 +10,10 @@ import os
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
-from backend.core.command_parser import CommandParser
-from backend.core.confidence_tracker import confidence_tracker
-from backend.core.confidence_config import confidence_config
-from backend.config.logger import logger
+from backend.core.intent.command_parser import CommandParser
+from backend.core.intent.confidence_tracker import confidence_tracker
+from backend.core.intent.confidence_config import confidence_config
+from backend.utils.logger import logger
 
 
 def demonstrate_confidence_tracking():
@@ -47,7 +47,7 @@ def demonstrate_confidence_tracking():
         "send email to john@example.com with subject 'Meeting'",
     ]
     
-    print("\n📊 Processing commands and tracking confidence...\n")
+    print("\nðŸ“Š Processing commands and tracking confidence...\n")
     
     for i, command in enumerate(test_commands, 1):
         print(f"\n{i}. Command: '{command}'")
@@ -65,25 +65,25 @@ def demonstrate_confidence_tracking():
             print(f"   Action: {action.upper()}")
             
             if result.needs_clarification:
-                print(f"   ⚠️  Clarification needed: {result.clarification_prompt}")
+                print(f"   âš ï¸  Clarification needed: {result.clarification_prompt}")
             else:
-                print(f"   ✅ Ready to execute")
+                print(f"   âœ… Ready to execute")
             
         except Exception as e:
-            print(f"   ❌ Error: {e}")
+            print(f"   âŒ Error: {e}")
     
     print("\n" + "="*70)
 
 
 def show_statistics():
     """Show confidence statistics."""
-    print("\n📈 CONFIDENCE STATISTICS")
+    print("\nðŸ“ˆ CONFIDENCE STATISTICS")
     print("="*70)
     
     confidence_tracker.print_statistics()
     
     # Show intent confidence map
-    print("\n📋 CONFIDENCE BY INTENT")
+    print("\nðŸ“‹ CONFIDENCE BY INTENT")
     print("="*70)
     intent_map = confidence_tracker.get_intent_confidence_map()
     
@@ -96,7 +96,7 @@ def show_statistics():
 
 def show_low_confidence_analysis():
     """Show low confidence commands for analysis."""
-    print("\n⚠️  LOW CONFIDENCE COMMANDS")
+    print("\nâš ï¸  LOW CONFIDENCE COMMANDS")
     print("="*70)
     
     low_conf_entries = confidence_tracker.get_low_confidence_commands(threshold=0.5)
@@ -108,7 +108,7 @@ def show_low_confidence_analysis():
     print(f"\nFound {len(low_conf_entries)} commands with confidence < 0.5:\n")
     
     for entry in low_conf_entries[-10:]:  # Show last 10
-        print(f"• '{entry.command}'")
+        print(f"â€¢ '{entry.command}'")
         print(f"  Intent: {entry.intent} | Confidence: {entry.confidence:.3f}")
         print(f"  Source: {entry.source} | Executed: {entry.executed}")
         print()
@@ -116,7 +116,7 @@ def show_low_confidence_analysis():
 
 def show_trend_analysis():
     """Show confidence trends over time."""
-    print("\n📊 CONFIDENCE TREND ANALYSIS")
+    print("\nðŸ“Š CONFIDENCE TREND ANALYSIS")
     print("="*70)
     
     trend = confidence_tracker.get_trend_analysis()
@@ -132,13 +132,13 @@ def show_trend_analysis():
 
 def demonstrate_configuration():
     """Demonstrate confidence configuration."""
-    print("\n⚙️  CONFIDENCE CONFIGURATION")
+    print("\nâš™ï¸  CONFIDENCE CONFIGURATION")
     print("="*70)
     
     confidence_config.print_config()
     
     # Show threshold classification examples
-    print("\n🎯 THRESHOLD EXAMPLES")
+    print("\nðŸŽ¯ THRESHOLD EXAMPLES")
     print("="*70)
     
     test_confidences = [0.95, 0.75, 0.45, 0.25, 0.10]
@@ -161,24 +161,24 @@ def demonstrate_configuration():
 def show_confidence_bar(confidence: float, width: int = 40) -> str:
     """Create visual confidence bar."""
     filled = int(confidence * width)
-    bar = "█" * filled + "░" * (width - filled)
+    bar = "â–ˆ" * filled + "â–‘" * (width - filled)
     
     # Color code
     if confidence >= 0.8:
-        color = "🟢"
+        color = "ðŸŸ¢"
     elif confidence >= 0.5:
-        color = "🟡"
+        color = "ðŸŸ¡"
     elif confidence >= 0.3:
-        color = "🟠"
+        color = "ðŸŸ "
     else:
-        color = "🔴"
+        color = "ðŸ”´"
     
     return f"{color} [{bar}] {confidence:.3f}"
 
 
 def demonstrate_visual_confidence():
     """Show visual confidence indicators."""
-    print("\n🎨 VISUAL CONFIDENCE INDICATORS")
+    print("\nðŸŽ¨ VISUAL CONFIDENCE INDICATORS")
     print("="*70)
     
     recent = confidence_tracker.get_recent_entries(10)
@@ -197,7 +197,7 @@ def demonstrate_visual_confidence():
 
 def main():
     """Run full demonstration."""
-    print("\n" + "🤖 AI VOICE ASSISTANT - CONFIDENCE SYSTEM DEMO 🤖".center(70))
+    print("\n" + "ðŸ¤– AI VOICE ASSISTANT - CONFIDENCE SYSTEM DEMO ðŸ¤–".center(70))
     
     # Part 1: Track confidence across multiple commands
     demonstrate_confidence_tracking()
@@ -218,19 +218,19 @@ def main():
     demonstrate_visual_confidence()
     
     print("\n" + "="*70)
-    print("✅ Confidence system demonstration complete!")
+    print("âœ… Confidence system demonstration complete!")
     print("="*70)
     
     # Show summary
     stats = confidence_tracker.get_statistics()
-    print(f"\n📊 Summary:")
+    print(f"\nðŸ“Š Summary:")
     print(f"   Total commands processed: {stats['total_commands']}")
     print(f"   Average confidence: {stats['avg_confidence']:.3f}")
     print(f"   Commands executed: {stats['executed_count']} ({stats['executed_percentage']}%)")
     print(f"   Clarifications needed: {stats['clarification_count']} ({stats['clarification_percentage']}%)")
     
-    print("\n💡 Try running 'pytest tests/test_confidence_*.py' to test the confidence system!")
-    print("💾 Confidence data saved to: backend/data/confidence_history.json")
+    print("\nðŸ’¡ Try running 'pytest tests/test_confidence_*.py' to test the confidence system!")
+    print("ðŸ’¾ Confidence data saved to: backend/data/confidence_history.json")
     print()
 
 

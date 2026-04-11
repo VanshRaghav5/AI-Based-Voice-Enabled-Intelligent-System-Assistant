@@ -1,0 +1,23 @@
+{
+  "thresholds": {
+    "high_confidence": 0.8,
+    "medium_confidence": 0.5,
+    "low_confidence": 0.3
+  },
+  "behavior": {
+    "auto_execute_above": 0.8,
+    "always_confirm_below": 0.5,
+    "reject_below": 0.2
+  },
+  "logging": {
+    "log_all_confidence": true,
+    "log_low_confidence_only": false,
+    "alert_on_very_low": true,
+    "very_low_threshold": 0.3
+  },
+  "analytics": {
+    "track_history": true,
+    "max_history_size": 1000,
+    "calculate_trends": true
+  }
+}

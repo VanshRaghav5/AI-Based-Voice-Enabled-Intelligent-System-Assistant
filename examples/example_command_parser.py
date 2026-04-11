@@ -12,8 +12,8 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-from backend.core.command_parser import command_parser
-from backend.config.logger import logger
+from backend.core.intent.command_parser import command_parser
+from backend.utils.logger import logger
 
 
 def demonstrate_command_parsing():
@@ -35,7 +35,7 @@ def demonstrate_command_parsing():
     print(f"  Intent: {result.intent}")
     print(f"  Confidence: {result.confidence:.2f}")
     print(f"  Parameters: {result.parameters}")
-    print(f"  Validation: {'✅ VALID' if result.validation.is_valid else '❌ INVALID'}")
+    print(f"  Validation: {'âœ… VALID' if result.validation.is_valid else 'âŒ INVALID'}")
     print(f"  Needs Clarification: {'Yes' if result.needs_clarification else 'No'}")
     if result.needs_clarification:
         print(f"  Clarification: {result.clarification_prompt}")
@@ -52,7 +52,7 @@ def demonstrate_command_parsing():
     print(f"  Intent: {result.intent}")
     print(f"  Confidence: {result.confidence:.2f}")
     print(f"  Parameters: {result.parameters}")
-    print(f"  Validation: {'✅ VALID' if result.validation.is_valid else '❌ INVALID'}")
+    print(f"  Validation: {'âœ… VALID' if result.validation.is_valid else 'âŒ INVALID'}")
     print(f"  Needs Clarification: {'Yes' if result.needs_clarification else 'No'}")
     if result.needs_clarification:
         print(f"  Clarification: {result.clarification_prompt}")
@@ -69,7 +69,7 @@ def demonstrate_command_parsing():
     print(f"  Intent: {result.intent}")
     print(f"  Confidence: {result.confidence:.2f}")
     print(f"  Parameters: {result.parameters}")
-    print(f"  Validation: {'✅ VALID' if result.validation.is_valid else '❌ INVALID'}")
+    print(f"  Validation: {'âœ… VALID' if result.validation.is_valid else 'âŒ INVALID'}")
     if result.validation.warnings:
         print(f"  Warnings: {result.validation.warnings}")
     print(f"  Needs Clarification: {'Yes' if result.needs_clarification else 'No'}")
@@ -86,7 +86,7 @@ def demonstrate_command_parsing():
     print(f"  Intent: {result.intent}")
     print(f"  Confidence: {result.confidence:.2f}")
     print(f"  Parameters: {result.parameters}")
-    print(f"  Validation: {'✅ VALID' if result.validation.is_valid else '❌ INVALID'}")
+    print(f"  Validation: {'âœ… VALID' if result.validation.is_valid else 'âŒ INVALID'}")
     print(f"  Needs Clarification: {'Yes' if result.needs_clarification else 'No'}")
     print()
     
@@ -101,7 +101,7 @@ def demonstrate_command_parsing():
     print(f"  Intent: {result.intent}")
     print(f"  Confidence: {result.confidence:.2f}")
     print(f"  Parameters: {result.parameters}")
-    print(f"  Validation: {'✅ VALID' if result.validation.is_valid else '❌ INVALID'}")
+    print(f"  Validation: {'âœ… VALID' if result.validation.is_valid else 'âŒ INVALID'}")
     if not result.validation.is_valid:
         print(f"  Errors: {result.validation.errors}")
     print(f"  Needs Clarification: {'Yes' if result.needs_clarification else 'No'}")
@@ -153,8 +153,8 @@ def show_confidence_levels():
     
     for cmd in test_commands:
         result = command_parser.parse(cmd)
-        confidence_bar = "█" * int(result.confidence * 10)
-        status = "✅" if not result.needs_clarification else "❓"
+        confidence_bar = "â–ˆ" * int(result.confidence * 10)
+        status = "âœ…" if not result.needs_clarification else "â“"
         print(f"{cmd:<40} {result.intent:<25} {confidence_bar:<12} {status}")
     
     print()
@@ -176,34 +176,34 @@ def show_pipeline_stages():
     # Stage 1: Intent Recognition
     print("Stage 1: Intent Recognition")
     result = command_parser.parse(command)
-    print(f"  → Identified Intent: {result.intent}")
-    print(f"  → Source: {command_parser.llm_client.last_source}")
+    print(f"  â†’ Identified Intent: {result.intent}")
+    print(f"  â†’ Source: {command_parser.llm_client.last_source}")
     print()
     
     # Stage 2: Parameter Extraction
     print("Stage 2: Parameter Extraction")
-    print(f"  → Extracted Parameters:")
+    print(f"  â†’ Extracted Parameters:")
     for key, value in result.parameters.items():
         print(f"      {key}: {value}")
     print()
     
     # Stage 3: Parameter Validation
     print("Stage 3: Parameter Validation")
-    print(f"  → Validation Status: {'✅ PASS' if result.validation.is_valid else '❌ FAIL'}")
+    print(f"  â†’ Validation Status: {'âœ… PASS' if result.validation.is_valid else 'âŒ FAIL'}")
     if result.validation.errors:
-        print(f"  → Errors: {result.validation.errors}")
+        print(f"  â†’ Errors: {result.validation.errors}")
     if result.validation.warnings:
-        print(f"  → Warnings: {result.validation.warnings}")
+        print(f"  â†’ Warnings: {result.validation.warnings}")
     print()
     
     # Stage 4: Decision
     print("Stage 4: Decision")
-    print(f"  → Overall Confidence: {result.confidence:.2f}")
-    print(f"  → Needs Clarification: {'Yes' if result.needs_clarification else 'No'}")
+    print(f"  â†’ Overall Confidence: {result.confidence:.2f}")
+    print(f"  â†’ Needs Clarification: {'Yes' if result.needs_clarification else 'No'}")
     if result.needs_clarification:
-        print(f"  → Clarification Prompt: {result.clarification_prompt}")
+        print(f"  â†’ Clarification Prompt: {result.clarification_prompt}")
     else:
-        print(f"  → Decision: READY FOR EXECUTION ✅")
+        print(f"  â†’ Decision: READY FOR EXECUTION âœ…")
     print()
 
 

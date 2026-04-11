@@ -1,5 +1,5 @@
-from backend.core.assistant_controller import AssistantController
-from backend.voice_engine.audio_pipeline import listen, speak
+from backend.core.execution.assistant_controller import AssistantController
+from backend.services.voice_service import listen, speak
 
 
 controller = AssistantController()

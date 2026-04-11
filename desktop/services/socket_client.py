@@ -28,6 +28,23 @@ class SocketClient:
             self.bus.status_changed.emit({"socket": "connected"})
 
         @self.sio.event
+        def connect_error(data):
+            message = str(data or "Socket authentication failed")
+            lower = message.lower()
+            if "token" in lower and ("expired" in lower or "invalid" in lower):
+                self.session.clear()
+                self.bus.error.emit({
+                    "message": "Session expired. Please sign in again.",
+                    "code": "unauthorized",
+                })
+                try:
+                    self.sio.disconnect()
+                except Exception:
+                    pass
+                return
+            self.bus.error.emit({"message": f"Socket connect failed: {message}"})
+
+        @self.sio.event
         def disconnect():
             self.bus.status_changed.emit({"socket": "disconnected"})
 
@@ -99,7 +116,7 @@ class SocketClient:
 
         token = self.session.token
         if not token:
-            self.bus.error.emit({"message": "Missing auth token"})
+            self.bus.error.emit({"message": "Missing auth token", "code": "unauthorized"})
             return False
 
         try:

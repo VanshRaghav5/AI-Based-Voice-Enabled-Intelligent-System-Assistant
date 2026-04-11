@@ -13,7 +13,7 @@ class TestCommandParser:
     
     def test_parser_initialization(self):
         """Test command parser can be initialized."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         parser = CommandParser()
         
         assert parser is not None
@@ -21,10 +21,10 @@ class TestCommandParser:
         assert hasattr(parser, 'extractor')
         assert hasattr(parser, 'validator')
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_parse_simple_command(self, mock_llm_class):
         """Test parsing a simple command."""
-        from backend.core.command_parser import command_parser
+        from backend.core.intent.command_parser import command_parser
         
         # Mock LLM response
         mock_llm = MagicMock()
@@ -35,7 +35,7 @@ class TestCommandParser:
         mock_llm_class.return_value = mock_llm
         
         # Create fresh parser with mock
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         parser = CommandParser()
         parser.llm_client = mock_llm
         
@@ -45,10 +45,10 @@ class TestCommandParser:
         assert result.confidence > 0.0
         assert not result.needs_clarification or result.needs_clarification
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_parse_returns_high_confidence_for_clear_command(self, mock_llm_class):
         """Test high confidence for clear commands."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
@@ -64,10 +64,10 @@ class TestCommandParser:
         assert result.confidence > 0.5
         assert result.intent == "system.volume.up"
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_parse_detects_missing_parameters(self, mock_llm_class):
         """Test parser detects missing parameters."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
@@ -84,10 +84,10 @@ class TestCommandParser:
         assert result.needs_clarification
         assert result.clarification_prompt is not None
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_parse_validation_errors_trigger_clarification(self, mock_llm_class):
         """Test validation errors trigger clarification."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
@@ -103,10 +103,10 @@ class TestCommandParser:
         # Should need clarification due to missing params
         assert result.needs_clarification
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_parse_low_confidence_triggers_clarification(self, mock_llm_class):
         """Test low confidence triggers clarification."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
@@ -125,7 +125,7 @@ class TestCommandParser:
     
     def test_intent_to_human_readable(self):
         """Test converting intent to human-readable text."""
-        from backend.core.command_parser import command_parser
+        from backend.core.intent.command_parser import command_parser
         
         human = command_parser._intent_to_human("file.create")
         assert "create" in human.lower()
@@ -133,14 +133,14 @@ class TestCommandParser:
     
     def test_suggest_intents_from_keywords(self):
         """Test suggesting intents based on keywords."""
-        from backend.core.command_parser import command_parser
+        from backend.core.intent.command_parser import command_parser
         
         suggestions = command_parser._suggest_intents("I want to work with files")
         assert "file" in suggestions.lower()
     
     def test_calculate_keyword_match_score(self):
         """Test keyword match scoring."""
-        from backend.core.command_parser import command_parser
+        from backend.core.intent.command_parser import command_parser
         
         # Exact match should score high
         score = command_parser._calculate_keyword_match("volume up", "system.volume.up")
@@ -149,12 +149,19 @@ class TestCommandParser:
         # No match should score low
         score = command_parser._calculate_keyword_match("email something", "file.open")
         assert score < 0.5
+
+    def test_calculate_keyword_match_for_intent_alias(self):
+        """Planner alias intents should score like canonical intents."""
+        from backend.core.intent.command_parser import command_parser
+
+        score = command_parser._calculate_keyword_match("open github.com", "browser.open_url")
+        assert score > 0.5
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_parsed_command_dataclass(self, mock_llm_class):
         """Test ParsedCommand dataclass structure."""
-        from backend.core.command_parser import ParsedCommand
-        from backend.llm.parameter_validator import ValidationResult
+        from backend.core.intent.command_parser import ParsedCommand
+        from backend.services.llm.parameter_validator import ValidationResult
         
         result = ParsedCommand(
             intent="file.open",
@@ -170,10 +177,10 @@ class TestCommandParser:
         assert result.validation.is_valid
         assert not result.needs_clarification
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_confidence_calculation_with_ollama(self, mock_llm_class):
         """Test confidence is higher when using Ollama."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
@@ -196,7 +203,7 @@ class TestCommandParser:
     
     def test_create_missing_param_prompt(self):
         """Test creating user-friendly missing parameter prompt."""
-        from backend.core.command_parser import command_parser
+        from backend.core.intent.command_parser import command_parser
         
         prompt = command_parser._create_missing_param_prompt(
             "whatsapp.send",
@@ -206,10 +213,10 @@ class TestCommandParser:
         assert "message" in prompt.lower()
         assert "contact" in prompt.lower()
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_parse_handles_empty_llm_response(self, mock_llm_class):
         """Test parser handles empty LLM response."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = None  # Empty response
@@ -227,10 +234,10 @@ class TestCommandParser:
 class TestCommandParserIntegration:
     """Integration tests for command parser."""
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_full_pipeline_file_create(self, mock_llm_class):
         """Test full pipeline for file create command."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
@@ -248,10 +255,10 @@ class TestCommandParserIntegration:
         # Should not need clarification with valid path
         assert not result.needs_clarification or result.needs_clarification
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_full_pipeline_whatsapp_complete(self, mock_llm_class):
         """Test full pipeline for complete WhatsApp command."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
@@ -270,10 +277,10 @@ class TestCommandParserIntegration:
         # Should have high confidence with all params
         assert result.confidence > 0.5
     
-    @patch('backend.core.command_parser.LLMClient')
+    @patch('backend.core.intent.command_parser.LLMClient')
     def test_full_pipeline_volume_with_step(self, mock_llm_class):
         """Test full pipeline for volume command with step."""
-        from backend.core.command_parser import CommandParser
+        from backend.core.intent.command_parser import CommandParser
         
         mock_llm = MagicMock()
         mock_llm.generate_plan.return_value = {
