@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+from pathlib import Path
 from dataclasses import asdict, fields
 
 from backend.utils.assistant_config import assistant_config
@@ -105,10 +106,12 @@ class SessionState:
         if not isinstance(entry, dict):
             return
 
+        tool_name = str(entry.get("tool_name", "")).strip().lower()
         data = entry.get("data", {}) if isinstance(entry.get("data"), dict) else {}
         args = entry.get("tool_args", {}) if isinstance(entry.get("tool_args"), dict) else {}
 
         path = data.get("path") or args.get("path") or args.get("source") or data.get("source")
+        cwd = data.get("cwd") or args.get("cwd")
         url = data.get("url") or args.get("url")
         contact = (
             data.get("recipient")
@@ -117,8 +120,31 @@ class SessionState:
             or args.get("target")
         )
 
-        if path:
-            self._state.last_file_path = str(path)
+        file_or_folder_tools = {
+            "create_file",
+            "write_file",
+            "read_file",
+            "move_file",
+            "delete_file",
+            "open_project",
+            "list_directory",
+            "search_files",
+            "run_command",
+        }
+
+        if path and (tool_name in file_or_folder_tools or os.path.sep in str(path) or ":\\" in str(path)):
+            path_str = str(path)
+            self._state.last_file_path = path_str
+            try:
+                candidate = Path(path_str).expanduser()
+                if candidate.suffix:
+                    self._state.last_folder_path = str(candidate.parent)
+                else:
+                    self._state.last_folder_path = str(candidate)
+            except Exception:
+                pass
+        if cwd:
+            self._state.last_folder_path = str(cwd)
         if url:
             self._state.last_url = str(url)
         if contact:

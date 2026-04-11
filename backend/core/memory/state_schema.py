@@ -7,6 +7,8 @@ class SessionStateSchema:
     active_application: Optional[str] = None
     active_window: Optional[str] = None
 
+    active_goal: Optional[str] = None
+
     last_file_path: Optional[str] = None
     last_folder_path: Optional[str] = None
 

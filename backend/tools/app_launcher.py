@@ -14,8 +14,40 @@ from backend.utils.logger import logger
 APP_MAP = {
     "chrome": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     "notepad": "notepad.exe",
-    "calculator": "calc.exe"
+    "calculator": "calc.exe",
+    "terminal": "powershell.exe",
+    "powershell": "powershell.exe",
+    "cmd": "cmd.exe",
+    "code": "code",
+    "vscode": "code",
+    "visual studio code": "code",
 }
+
+
+def _resolve_app_command(app_name_lower: str) -> str:
+    """Resolve app aliases and executable path/command for launching."""
+    app_key = app_name_lower.strip()
+
+    if app_key in ("vscode", "visual studio code"):
+        app_key = "code"
+
+    if app_key not in APP_MAP:
+        raise KeyError(app_name_lower)
+
+    # Prefer shell commands for VS Code, then fall back to common install locations.
+    if app_key == "code":
+        candidates = [
+            "code",
+            "code.cmd",
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Microsoft VS Code", "Code.exe"),
+            os.path.join(os.environ.get("PROGRAMFILES", ""), "Microsoft VS Code", "Code.exe"),
+            os.path.join(os.environ.get("PROGRAMFILES(X86)", ""), "Microsoft VS Code", "Code.exe"),
+        ]
+        for candidate in candidates:
+            if candidate and (not os.path.isabs(candidate) or os.path.exists(candidate)):
+                return candidate
+
+    return APP_MAP[app_key]
 
 
 def open_app(app_name: str) -> dict:
@@ -30,17 +62,17 @@ def open_app(app_name: str) -> dict:
             raise ValueError("Application name cannot be empty")
         
         app_name_lower = app_name.lower().strip()
-        
-        if app_name_lower not in APP_MAP:
+
+        try:
+            app_path = _resolve_app_command(app_name_lower)
+        except KeyError:
             logger.warning(f"Application not in map: {app_name}")
             available_apps = ", ".join(APP_MAP.keys())
             raise AutomationError(
                 f"Application '{app_name}' not found in app map",
                 f"I don't know how to open '{app_name}'. I can open: {available_apps}"
             )
-        
-        app_path = APP_MAP[app_name_lower]
-        
+
         logger.info(f"Opening application: {app_name} ({app_path})")
         
         try:

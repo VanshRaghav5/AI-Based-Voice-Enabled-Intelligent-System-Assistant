@@ -40,7 +40,7 @@
     "timeout_seconds": 10
   },
   "llm": {
-    "model": "qwen2.5:7b-instruct-q4_0",
+    "model": "llama3.2:3b",
     "timeout_seconds": 20
   },
   "memory": {

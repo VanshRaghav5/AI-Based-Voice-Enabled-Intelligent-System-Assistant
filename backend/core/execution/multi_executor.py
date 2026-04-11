@@ -149,6 +149,9 @@ class MultiExecutor:
 
             try:
                 result = self.registry.execute(tool_name, tool_args)
+                if isinstance(result, dict):
+                    result.setdefault("tool_name", tool_name)
+                    result.setdefault("tool_args", tool_args)
                 results.append(result)
 
                 if result.get("status") == "success" or result.get("success") is True:
@@ -229,6 +232,9 @@ class MultiExecutor:
 
             try:
                 result = self.registry.execute(tool_name, tool_args)
+                if isinstance(result, dict):
+                    result.setdefault("tool_name", tool_name)
+                    result.setdefault("tool_args", tool_args)
                 results.append(result)
                 logger.info(f"[MultiExecutor] Executed step #{idx + 1}: {result}")
 
