@@ -13,11 +13,13 @@ from backend.utils.settings import LLM_MODEL, LLM_TIMEOUT_SECONDS
 
 class LLMClient:
 
+    FALLBACK_MODELS = ["llama3.2:3b", "llama3.2:1b", "phi3:mini"]
+
     def __init__(self, model=None):
         """Initialize LLM client with specified model.
         
         Args:
-            model: Model name. If None, uses OLLAMA_MODEL env var or default qwen2.5:7b-instruct-q4_0.
+            model: Model name. If None, uses OLLAMA_MODEL env var or default llama3.2:3b.
         """
         default_model = os.getenv("OLLAMA_MODEL", LLM_MODEL)
         self.model = model or default_model
@@ -29,6 +31,16 @@ class LLMClient:
         self.ollama_available = self._check_ollama()
         self.last_source = None  # Track last plan source: "ollama" or "fallback"
         self.system_prompt = self._load_system_prompt()
+
+    def _choose_fallback_model(self, available_models):
+        """Select a smaller model when the configured model is unavailable or too large."""
+        available_set = set(available_models or [])
+        for candidate in self.FALLBACK_MODELS:
+            if candidate in available_set or any(candidate in name for name in available_set):
+                if candidate != self.model:
+                    logger.warning(f"[LLMClient] Switching to fallback model '{candidate}'")
+                return candidate
+        return None
     
     def _create_session(self):
         """Create requests session with connection pooling and retries."""
@@ -66,7 +78,12 @@ class LLMClient:
                 if self.model in model_names or any(self.model in name for name in model_names):
                     logger.info(f"[LLMClient] Model '{self.model}' is available")
                 else:
-                    logger.warning(f"[LLMClient] Model '{self.model}' not found. Available models: {model_names}")
+                    fallback_model = self._choose_fallback_model(model_names)
+                    if fallback_model:
+                        self.model = fallback_model
+                        logger.info(f"[LLMClient] Using fallback model '{self.model}'")
+                    else:
+                        logger.warning(f"[LLMClient] Model '{self.model}' not found. Available models: {model_names}")
                 return True
         except Exception as e:
             logger.warning(f"[LLMClient] Ollama API not accessible: {e} - will use fallback mode")
@@ -93,6 +110,59 @@ class LLMClient:
         
         # Minimal fallback prompt
         return "You are an automation assistant. Return only valid JSON with 'steps' array containing tool calls."
+
+    def generate(self, prompt: str) -> str:
+        """Generate response from user prompt using Ollama.
+        
+        CORE LLM INTEGRATION METHOD.
+        This is where LLM actually thinks.
+        
+        Args:
+            prompt: Full prompt with system instructions + user request.
+            
+        Returns:
+            Raw LLM response (string).
+        """
+        try:
+            logger.info(f"[LLMClient] Generating response for: {prompt[:100]}...")
+            
+            if not self.ollama_available:
+                logger.warning("[LLMClient] Ollama not available")
+                return None
+            
+            payload = {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.3,
+                    "num_predict": 1024,
+                    "top_k": 20,
+                    "top_p": 0.9
+                }
+            }
+            
+            response = self.session.post(
+                f"{self.ollama_api_url}/api/generate",
+                json=payload,
+                timeout=LLM_TIMEOUT_SECONDS
+            )
+
+            if response.status_code != 200:
+                error_text = response.text[:200] if getattr(response, "text", None) else ""
+                logger.warning(f"[LLMClient] API error {response.status_code}: {error_text}")
+                if response.status_code == 500 and "memory" in error_text.lower():
+                    logger.warning("[LLMClient] Model is too large for available memory. Pull a smaller model like llama3.2:3b or llama3.2:1b.")
+                return None
+
+            result = response.json()
+            output = result.get('response', '').strip()
+            logger.info(f"[LLM Response] {output}")
+            return output
+
+        except Exception as e:
+            logger.warning(f"[LLMClient] Error: {e}")
+            return None
 
     def generate_plan(self, prompt: str):
         """Generate execution plan from user input using Ollama or fallback.

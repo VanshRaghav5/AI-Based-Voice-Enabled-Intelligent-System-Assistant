@@ -85,7 +85,7 @@ VOICE_RESPONSE_COOLDOWN_SECONDS = float(
 # LLM Settings
 # ==============================
 
-LLM_MODEL = assistant_config.get("llm.model", "qwen2.5:7b-instruct-q4_0")
+LLM_MODEL = assistant_config.get("llm.model", "llama3.2:3b")
 LLM_TIMEOUT_SECONDS = int(assistant_config.get("llm.timeout_seconds", 8))
 LLM_FAST_ROUTER_ENABLED = bool(assistant_config.get("llm.fast_router_enabled", True))
 LLM_MAX_AGENT_ITERATIONS = int(assistant_config.get("llm.max_agent_iterations", 2))

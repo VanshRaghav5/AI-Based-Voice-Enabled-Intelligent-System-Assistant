@@ -87,6 +87,21 @@ class TestBasicToolExecution:
         # Assert
         assert result["success"] == False
         assert result["error"] is not None
+
+    def test_open_app_vscode_alias(self):
+        """Test opening VS Code using open_app alias."""
+        from backend.tools import starter_tools
+
+        with patch("backend.tools.app_launcher.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+
+            result = starter_tools.open_app("vscode")
+
+            assert result["success"] is True
+            assert "opening" in result.get("message", "").lower()
+            assert mock_popen.called
+            called_app = mock_popen.call_args[0][0]
+            assert called_app in ("code", "code.cmd") or str(called_app).endswith("Code.exe")
     
     def test_close_app_success(self):
         """Test closing an application."""

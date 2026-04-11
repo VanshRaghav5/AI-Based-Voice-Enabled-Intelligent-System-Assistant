@@ -13,6 +13,7 @@ except Exception:
 import ctypes
 
 from backend.core.memory.memory_store import MemoryStore
+from backend.core.memory.memory_manager import MemoryManager
 from backend.tools.app_launcher import open_app as _open_app
 from backend.tools.browser_control import open_url as _open_url
 from backend.tools.browser_control import search_google as _search_google
@@ -24,6 +25,7 @@ from backend.utils.logger import logger
 
 
 _memory_store = MemoryStore()
+_memory_manager = MemoryManager()
 
 
 def _normalize_result(result: dict) -> dict:
@@ -391,6 +393,8 @@ def open_project(path: str) -> dict:
     project_path = str(Path(path or "").expanduser().resolve())
     if not os.path.isdir(project_path):
         return {"success": False, "status": "error", "error": f"Project path not found: {project_path}"}
+    _memory_manager.set("project_path", project_path, persistent=True)
+    _memory_manager.set("last_project", project_path)
     return _start_background_process(f'explorer "{project_path}"')
 
 
@@ -483,7 +487,9 @@ def remember_data(key: str, value: str) -> dict:
     if not normalized_key:
         return {"success": False, "status": "error", "error": "Memory key is required"}
 
-    ok = _memory_store.remember_fact(normalized_key, str(value or ""))
+    saved_value = str(value or "")
+    _memory_manager.set(normalized_key, saved_value, persistent=True)
+    ok = _memory_store.remember_fact(normalized_key, saved_value)
     if not ok:
         return {"success": False, "status": "error", "error": "Could not store memory"}
 
@@ -500,7 +506,9 @@ def recall_data(key: str) -> dict:
     if not normalized_key:
         return {"success": False, "status": "error", "error": "Memory key is required"}
 
-    value = _memory_store.recall_fact(normalized_key)
+    value = _memory_manager.get(normalized_key)
+    if value is None:
+        value = _memory_store.recall_fact(normalized_key)
     if value is None:
         return {
             "success": False,
@@ -523,6 +531,8 @@ def delete_memory(key: str) -> dict:
         return {"success": False, "status": "error", "error": "Memory key is required"}
 
     removed = _memory_store.forget_fact(normalized_key)
+    _memory_manager.delete(normalized_key, persistent=True)
+    _memory_manager.delete(normalized_key, persistent=False)
     if not removed:
         return {
             "success": False,
@@ -541,9 +551,12 @@ def delete_memory(key: str) -> dict:
 
 def list_memory() -> dict:
     facts = _memory_store.list_facts()
+    long_term_facts = _memory_manager.get_context().get("long_term", {})
+    merged_facts = dict(long_term_facts)
+    merged_facts.update(facts)
     return {
         "success": True,
         "status": "success",
-        "message": f"Listed {len(facts)} memory items",
-        "data": {"facts": facts},
+        "message": f"Listed {len(merged_facts)} memory items",
+        "data": {"facts": merged_facts},
     }
