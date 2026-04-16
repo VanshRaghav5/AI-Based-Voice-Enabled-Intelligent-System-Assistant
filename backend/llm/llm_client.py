@@ -555,6 +555,13 @@ class LLMClient:
             path = self._extract_path(effective_prompt) or "."
             steps.append({"name": "git.log", "args": {"cwd": path}})
 
+        # --- TIME & DATE ---
+        elif not steps and any(x in prompt_lower for x in ["what time is it", "current time", "tell me the time", "time is it"]):
+            steps.append({"name": "system.time", "args": {}})
+
+        elif not steps and any(x in prompt_lower for x in ["what day is it", "current date", "tell me the date", "what is today", "day is today"]):
+            steps.append({"name": "system.date", "args": {}})
+
         if not steps:
             logger.warning(f"[LLMClient] No keyword match for normalized input: {prompt_lower}")
             return None

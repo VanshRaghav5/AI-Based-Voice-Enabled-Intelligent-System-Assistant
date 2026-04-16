@@ -55,6 +55,11 @@ from backend.automation.system.sleep import (
     SystemHibernateTool
 )
 
+from backend.automation.system.datetime_tools import (
+    CurrentTimeTool,
+    CurrentDateTool
+)
+
 from backend.automation.system.shortcuts import (
     OpenTaskManagerTool,
     OpenFileExplorerTool,
@@ -146,6 +151,10 @@ def register_all_tools(registry):
     registry.register(BrightnessDecreaseTool())
     registry.register(BrightnessSetTool())
     registry.register(MonitorOffTool())
+
+    # Time & Date
+    registry.register(CurrentTimeTool())
+    registry.register(CurrentDateTool())
 
     # System Shortcuts
     registry.register(OpenTaskManagerTool())
