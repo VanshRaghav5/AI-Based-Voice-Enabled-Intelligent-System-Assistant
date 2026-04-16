@@ -71,6 +71,10 @@ SYSTEM SHORTCUTS:
 - system.run_dialog: Open Windows Run dialog (Win+R)
 - system.recycle_bin.empty: Empty the Recycle Bin
 
+TIME & DATE:
+- system.time: Get the current time
+- system.date: Get the current date and day of the week
+
 CODING & DEVELOPMENT:
 - code.open_project: Open project folder in VS Code (requires: path)
 - code.detect_project: Detect project type and setup requirements (requires: path)
@@ -213,3 +217,9 @@ User: "Show git log"
 
 User: "Pull latest changes"
 {"steps": [{"name": "git.pull", "args": {}}]}
+
+User: "What time is it?"
+{"steps": [{"name": "system.time", "args": {}}]}
+
+User: "What day is today?"
+{"steps": [{"name": "system.date", "args": {}}]}
