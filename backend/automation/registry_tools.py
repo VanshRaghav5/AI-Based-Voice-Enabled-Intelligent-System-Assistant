@@ -77,6 +77,24 @@ from backend.automation.file.folder_operations import (
 
 from backend.automation.file.file_search import FileSearchTool
 
+from backend.automation.coding.project_detector import ProjectDetectorTool
+from backend.automation.coding.vscode_tool import VSCodeOpenProjectTool
+from backend.automation.coding.terminal_tool import (
+    TerminalRunTool,
+    TerminalRunBackgroundTool,
+    TerminalKillTool,
+    TerminalListRunningTool,
+)
+
+from backend.automation.git.git_tools import (
+    GitStatusTool,
+    GitAddTool,
+    GitCommitTool,
+    GitPushTool,
+    GitPullTool,
+    GitLogTool,
+)
+
 
 def register_all_tools(registry):
     # Communication Tools
@@ -148,3 +166,19 @@ def register_all_tools(registry):
 
     # File Search
     registry.register(FileSearchTool())
+
+    # Coding Tools
+    registry.register(ProjectDetectorTool())
+    registry.register(VSCodeOpenProjectTool())
+    registry.register(TerminalRunTool())
+    registry.register(TerminalRunBackgroundTool())
+    registry.register(TerminalKillTool())
+    registry.register(TerminalListRunningTool())
+
+    # Git Tools (local CLI)
+    registry.register(GitStatusTool())
+    registry.register(GitAddTool())
+    registry.register(GitCommitTool())
+    registry.register(GitPushTool())
+    registry.register(GitPullTool())
+    registry.register(GitLogTool())
