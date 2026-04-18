@@ -209,11 +209,31 @@ class LLMClient:
         if command_matches:
             return command_matches[-1].strip()
 
-        # For replan prompt, the first non-empty line is generally the original command.
-        for line in str(prompt).splitlines():
-            candidate = line.strip()
-            if candidate and not candidate.lower().startswith("memory context"):
-                return candidate
+        # For replan prompt or missing USER COMMAND, try to find the command after the MEMORY CONTEXT block.
+        lines = prompt.splitlines()
+        extracted_lines = []
+        in_memory_block = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.lower().startswith("memory context"):
+                in_memory_block = True
+                continue
+            
+            # Memory facts usually start with a dash
+            if in_memory_block and (stripped.startswith("- ") or not stripped):
+                continue
+            
+            if in_memory_block and not stripped.startswith("- "):
+                in_memory_block = False
+            
+            if "REPLAN ITERATION" in stripped:
+                break
+            
+            if stripped:
+                extracted_lines.append(stripped)
+
+        if extracted_lines:
+            return extracted_lines[0]
 
         return str(prompt).strip()
 
