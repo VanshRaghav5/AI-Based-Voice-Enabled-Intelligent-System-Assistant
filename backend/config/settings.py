@@ -85,6 +85,12 @@ TTS_VOICE_CATALOG = dict(assistant_config.get("tts.voice_catalog", {}))
 VOICE_RESPONSE_COOLDOWN_SECONDS = float(
 	assistant_config.get("voice.response_cooldown_seconds", 0.1)
 )
+VOICE_ADAPTIVE_MAX_DURATION_SECONDS = float(
+    assistant_config.get("voice.adaptive_max_duration_seconds", 10.0)
+)
+VOICE_ADAPTIVE_CHUNK_SECONDS = float(
+    assistant_config.get("voice.adaptive_chunk_seconds", 0.5)
+)
 
 
 # ==============================
