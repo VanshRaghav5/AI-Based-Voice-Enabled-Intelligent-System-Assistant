@@ -71,6 +71,26 @@ SYSTEM SHORTCUTS:
 - system.run_dialog: Open Windows Run dialog (Win+R)
 - system.recycle_bin.empty: Empty the Recycle Bin
 
+TIME & DATE:
+- system.time: Get the current time
+- system.date: Get the current date and day of the week
+
+CODING & DEVELOPMENT:
+- code.open_project: Open project folder in VS Code (requires: path)
+- code.detect_project: Detect project type and setup requirements (requires: path)
+- terminal.run: Run a terminal command (requires: command; optional: cwd, timeout)
+- terminal.run_background: Run long-running command in background (requires: command; optional: cwd)
+- terminal.kill: Kill a background process (optional: pid — kills most recent if omitted)
+- terminal.list_running: List all background processes started by assistant
+
+GIT (local CLI):
+- git.status: Show git status (optional: cwd)
+- git.add: Stage files (optional: cwd, files)
+- git.commit: Commit with message (requires: message; optional: cwd)
+- git.push: Push to remote (optional: cwd, remote, branch)
+- git.pull: Pull from remote (optional: cwd, remote, branch)
+- git.log: View commit history (optional: cwd, count)
+
 RESPONSE FORMAT:
 Return ONLY valid JSON (no markdown, no explanations, no conversational text):
 {
@@ -164,3 +184,42 @@ User: "Copy hello world to clipboard"
 
 User: "Minimize all windows"
 {"steps": [{"name": "window.minimize_all", "args": {}}]}
+
+User: "Open this project in VS Code"
+{"steps": [{"name": "code.open_project", "args": {"path": "."}}]}
+
+User: "What kind of project is this"
+{"steps": [{"name": "code.detect_project", "args": {"path": "."}}]}
+
+User: "Set up this project and install dependencies"
+{"steps": [{"name": "code.detect_project", "args": {"path": "."}}, {"name": "terminal.run", "args": {"command": "npm install", "cwd": "."}}]}
+
+User: "Run npm install"
+{"steps": [{"name": "terminal.run", "args": {"command": "npm install"}}]}
+
+User: "Start the dev server"
+{"steps": [{"name": "terminal.run_background", "args": {"command": "npm run dev"}}]}
+
+User: "Stop the dev server"
+{"steps": [{"name": "terminal.kill", "args": {}}]}
+
+User: "What processes are running"
+{"steps": [{"name": "terminal.list_running", "args": {}}]}
+
+User: "Commit all changes with message fix login bug"
+{"steps": [{"name": "git.add", "args": {"files": "."}}, {"name": "git.commit", "args": {"message": "fix login bug"}}]}
+
+User: "Push to remote"
+{"steps": [{"name": "git.push", "args": {}}]}
+
+User: "Show git log"
+{"steps": [{"name": "git.log", "args": {}}]}
+
+User: "Pull latest changes"
+{"steps": [{"name": "git.pull", "args": {}}]}
+
+User: "What time is it?"
+{"steps": [{"name": "system.time", "args": {}}]}
+
+User: "What day is today?"
+{"steps": [{"name": "system.date", "args": {}}]}

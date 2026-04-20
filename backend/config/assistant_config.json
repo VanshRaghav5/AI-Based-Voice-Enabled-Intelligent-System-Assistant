@@ -2,6 +2,7 @@
   "assistant": {
     "active_persona": "professional",
     "user_title": "sir",
+    "default_workspace": "",
     "exit_commands": [
       "exit",
       "quit",
