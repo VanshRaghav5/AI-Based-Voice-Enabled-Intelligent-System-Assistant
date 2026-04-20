@@ -21,12 +21,6 @@ RECORDING_DYNAMIC_SILENCE_MIN = int(
 RECORDING_DYNAMIC_SILENCE_MAX = int(
 	assistant_config.get("recording.dynamic_silence_max_int16", 2200)
 )
-RECORDING_SILENCE_DURATION_SECONDS = float(
-	assistant_config.get("recording.silence_duration_seconds", 1.5)
-)
-RECORDING_INITIAL_LISTEN_SECONDS = float(
-	assistant_config.get("recording.initial_listen_seconds", 3.0)
-)
 
 
 # ==============================
@@ -84,12 +78,6 @@ TTS_VOICE_CATALOG = dict(assistant_config.get("tts.voice_catalog", {}))
 
 VOICE_RESPONSE_COOLDOWN_SECONDS = float(
 	assistant_config.get("voice.response_cooldown_seconds", 0.1)
-)
-VOICE_ADAPTIVE_MAX_DURATION_SECONDS = float(
-    assistant_config.get("voice.adaptive_max_duration_seconds", 10.0)
-)
-VOICE_ADAPTIVE_CHUNK_SECONDS = float(
-    assistant_config.get("voice.adaptive_chunk_seconds", 0.5)
 )
 
 
