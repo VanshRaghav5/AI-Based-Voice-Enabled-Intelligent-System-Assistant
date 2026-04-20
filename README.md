@@ -1,5 +1,8 @@
 # AI-Based Voice-Enabled Intelligent System Assistant
-
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+[![Status](https://img.shields.io/badge/status-active-success.svg)]()
 An offline, voice-controlled Windows desktop automation system. Speak natural commands to manage files, control applications, send messages, and operate your system — all without cloud connectivity.
 
 ---
@@ -417,3 +420,14 @@ pytest --cov=backend --cov-report=html    # With coverage report
 
 - **Vansh Raghav** — Voice & Automation Core
 - Team Members — LLM Integration, UI & Deployment
+---
+
+## Contributing
+
+We welcome contributions from the community! Please read our [Contributing Guidelines](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md) to get involved.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
