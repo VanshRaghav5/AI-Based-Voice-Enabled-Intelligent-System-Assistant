@@ -37,7 +37,7 @@ class ScreenshotTool(BaseTool):
                         default_filename = filename
                 
                 # Save to Desktop
-                desktop = os.path.join(os.path.expanduser("~"), "Desktop"); os.makedirs(desktop, exist_ok=True)
+                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
                 filepath = os.path.join(desktop, default_filename)
                 
                 screenshot.save(filepath, "PNG")
@@ -92,7 +92,7 @@ class ScreenshotRegionTool(BaseTool):
                         default_filename = filename
                 
                 # Save to Desktop
-                desktop = os.path.join(os.path.expanduser("~"), "Desktop"); os.makedirs(desktop, exist_ok=True)
+                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
                 filepath = os.path.join(desktop, default_filename)
                 
                 screenshot.save(filepath, "PNG")

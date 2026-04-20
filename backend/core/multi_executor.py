@@ -12,9 +12,6 @@ class MultiExecutor:
         "system.restart",
         "system.sleep",
         "system.hibernate",
-        "terminal.run",
-        "terminal.run_background",
-        "git.push",
     }
 
     def __init__(self, registry):
