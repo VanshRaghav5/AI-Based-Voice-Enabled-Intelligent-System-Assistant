@@ -209,31 +209,11 @@ class LLMClient:
         if command_matches:
             return command_matches[-1].strip()
 
-        # For replan prompt or missing USER COMMAND, try to find the command after the MEMORY CONTEXT block.
-        lines = prompt.splitlines()
-        extracted_lines = []
-        in_memory_block = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.lower().startswith("memory context"):
-                in_memory_block = True
-                continue
-            
-            # Memory facts usually start with a dash
-            if in_memory_block and (stripped.startswith("- ") or not stripped):
-                continue
-            
-            if in_memory_block and not stripped.startswith("- "):
-                in_memory_block = False
-            
-            if "REPLAN ITERATION" in stripped:
-                break
-            
-            if stripped:
-                extracted_lines.append(stripped)
-
-        if extracted_lines:
-            return extracted_lines[0]
+        # For replan prompt, the first non-empty line is generally the original command.
+        for line in str(prompt).splitlines():
+            candidate = line.strip()
+            if candidate and not candidate.lower().startswith("memory context"):
+                return candidate
 
         return str(prompt).strip()
 
@@ -513,75 +493,6 @@ class LLMClient:
                 if term:
                     steps.append({"name": "file.search", "args": {"filename": term}})
         
-        # --- CODING: open project in VS Code ---
-        elif not steps and any(x in prompt_lower for x in ["open project", "open in vscode",
-                                                            "open in vs code", "vscode project"]):
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "code.open_project", "args": {"path": path}})
-
-        # --- CODING: detect project type ---
-        elif not steps and any(x in prompt_lower for x in ["detect project", "what kind of project",
-                                                            "project type"]):
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "code.detect_project", "args": {"path": path}})
-
-        # --- CODING: run terminal command ---
-        elif not steps and any(x in prompt_lower for x in ["run command", "execute command",
-                                                            "terminal run", "run in terminal"]):
-            command = self._extract_terminal_command(effective_prompt)
-            steps.append({"name": "terminal.run", "args": {"command": command}})
-
-        # --- CODING: start dev server / background process ---
-        elif not steps and any(x in prompt_lower for x in ["run project", "start server",
-                                                            "start dev", "run dev server"]):
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "code.detect_project", "args": {"path": path}})
-
-        # --- CODING: stop/kill background process ---
-        elif not steps and any(x in prompt_lower for x in ["stop server", "kill server",
-                                                            "stop process", "kill process",
-                                                            "stop dev server"]):
-            steps.append({"name": "terminal.kill", "args": {}})
-
-        # --- CODING: list running processes ---
-        elif not steps and any(x in prompt_lower for x in ["what is running", "list running",
-                                                            "show running", "list processes"]):
-            steps.append({"name": "terminal.list_running", "args": {}})
-
-        # --- GIT: status ---
-        elif not steps and "git" in prompt_lower and any(x in prompt_lower for x in ["status", "changes"]):
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "git.status", "args": {"cwd": path}})
-
-        # --- GIT: commit (stages + commits) ---
-        elif not steps and "commit" in prompt_lower:
-            message = self._extract_commit_message(effective_prompt)
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "git.add", "args": {"cwd": path, "files": "."}})
-            steps.append({"name": "git.commit", "args": {"cwd": path, "message": message}})
-
-        # --- GIT: push ---
-        elif not steps and "git" in prompt_lower and "push" in prompt_lower:
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "git.push", "args": {"cwd": path}})
-
-        # --- GIT: pull ---
-        elif not steps and "git" in prompt_lower and "pull" in prompt_lower:
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "git.pull", "args": {"cwd": path}})
-
-        # --- GIT: log / history ---
-        elif not steps and "git" in prompt_lower and any(x in prompt_lower for x in ["log", "history"]):
-            path = self._extract_path(effective_prompt) or "."
-            steps.append({"name": "git.log", "args": {"cwd": path}})
-
-        # --- TIME & DATE ---
-        elif not steps and any(x in prompt_lower for x in ["what time is it", "current time", "tell me the time", "time is it"]):
-            steps.append({"name": "system.time", "args": {}})
-
-        elif not steps and any(x in prompt_lower for x in ["what day is it", "current date", "tell me the date", "what is today", "day is today"]):
-            steps.append({"name": "system.date", "args": {}})
-
         if not steps:
             logger.warning(f"[LLMClient] No keyword match for normalized input: {prompt_lower}")
             return None
@@ -909,70 +820,3 @@ class LLMClient:
             return quoted.group(1)
         
         return ""
-
-    def _extract_terminal_command(self, text: str) -> str:
-        """Extract terminal command from text.
-
-        Handles patterns like:
-          'run command "npm install"'
-          'execute npm test'
-          'terminal run pip freeze'
-
-        Args:
-            text: Input text.
-
-        Returns:
-            Extracted command or empty string.
-        """
-        # 1. Look for quoted command.
-        quoted = re.search(r'["\']([^"\']+)["\']', text)
-        if quoted:
-            return quoted.group(1).strip()
-
-        # 2. Strip known prefixes to isolate the command.
-        cleaned = re.sub(
-            r'^(?:run|execute|terminal)\s+(?:command|in terminal)?\s*',
-            '', text, flags=re.IGNORECASE,
-        ).strip()
-
-        return cleaned
-
-    def _extract_commit_message(self, text: str) -> str:
-        """Extract git commit message from text.
-
-        Handles patterns like:
-          'commit with message fix login bug'
-          'git commit -m "added tests"'
-          'commit all changes'
-
-        Args:
-            text: Input text.
-
-        Returns:
-            Commit message or 'update' as default.
-        """
-        # 1. Look for quoted message.
-        quoted = re.search(r'["\']([^"\']+)["\']', text)
-        if quoted:
-            return quoted.group(1).strip()
-
-        # 2. Look for 'message <text>' or '-m <text>'.
-        msg_match = re.search(
-            r'(?:message|msg|-m)\s+(.+)',
-            text, flags=re.IGNORECASE,
-        )
-        if msg_match:
-            msg = msg_match.group(1).strip().rstrip(".!")
-            if msg:
-                return msg
-
-        # 3. Strip prefixes and see if there's content left.
-        cleaned = re.sub(
-            r'^(?:git\s+)?commit\s+(?:all\s+)?(?:changes?\s+)?(?:with\s+)?',
-            '', text, flags=re.IGNORECASE,
-        ).strip().rstrip(".!")
-
-        if cleaned and len(cleaned) > 2:
-            return cleaned
-
-        return "update"
