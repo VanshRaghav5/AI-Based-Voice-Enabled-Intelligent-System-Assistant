@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import re
 import threading
 import json
@@ -10,7 +10,6 @@ import sounddevice as sd
 from google import genai
 from google.genai import types
 from ui import OminiUI
-from voice.offline_bridge import OfflineVoiceBridge
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
 )
@@ -433,44 +432,17 @@ class OminiLive:
         self._speaking_lock = threading.Lock()
         self.ui.on_text_command = self._on_text_command
         self._turn_done_event: asyncio.Event | None = None
-        self._queued_offline_turns: list[str] = []
-        self._offline_voice = OfflineVoiceBridge(BASE_DIR)
-        self._offline_mode_announced = False
 
     def _on_text_command(self, text: str):
-        clean = (text or "").strip()
-        if not clean:
-            return
-
         if not self._loop or not self.session:
-            self._queue_offline_turn(clean)
             return
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(
-                turns={"parts": [{"text": clean}]},
+                turns={"parts": [{"text": text}]},
                 turn_complete=True
             ),
             self._loop
         )
-
-    def _queue_offline_turn(self, text: str):
-        self._queued_offline_turns.append(text)
-        self.ui.write_log("SYS: Saved command for retry when internet is back.")
-        self._offline_voice.speak("Saved. I will run this when internet is back.")
-
-    async def _replay_offline_turns(self):
-        if not self._queued_offline_turns or not self.session:
-            return
-
-        queued = list(self._queued_offline_turns)
-        self._queued_offline_turns.clear()
-
-        self.ui.write_log(f"SYS: Replaying {len(queued)} offline command(s).")
-        for text in queued:
-            await self.session.send_client_content(
-                turns={"parts": [{"text": text}]},
-                turn_complete=True,
-            )
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
@@ -795,10 +767,6 @@ class OminiLive:
         )
 
         while True:
-            if not self._offline_voice.has_internet():
-                await self._run_offline_mode()
-                continue
-
             try:
                 print("[OMINI] 🔌 Connecting...")
                 self.ui.set_state("THINKING")
@@ -815,10 +783,8 @@ class OminiLive:
                     self._turn_done_event = asyncio.Event()
 
                     print("[OMINI] ✅ Connected.")
-                    self._offline_mode_announced = False
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: OMINI online.")
-                    await self._replay_offline_turns()
 
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
@@ -833,31 +799,6 @@ class OminiLive:
             self.ui.set_state("THINKING")
             print("[OMINI] 🔄 Reconnecting in 3s...")
             await asyncio.sleep(3)
-
-    async def _run_offline_mode(self):
-        self.session = None
-        self._loop = None
-        self.set_speaking(False)
-
-        if not self._offline_mode_announced:
-            self._offline_mode_announced = True
-            self.ui.set_state("PROCESSING")
-            self.ui.write_log("SYS: Internet unavailable. Offline voice mode active.")
-            self._offline_voice.speak("Internet is unavailable. Offline voice mode is active.")
-
-        while not self._offline_voice.has_internet():
-            self.ui.set_state("LISTENING")
-            text = await asyncio.to_thread(self._offline_voice.listen_and_transcribe_once)
-            if text:
-                clean = _clean_transcript(text)
-                if clean:
-                    self.ui.write_log(f"You: {clean}")
-                    self._queue_offline_turn(clean)
-            await asyncio.sleep(0.2)
-
-        self.ui.write_log("SYS: Internet restored. Returning to live mode.")
-        self._offline_voice.speak("Internet is back. Returning to live mode.")
-        self._offline_mode_announced = False
 
 
 def main():

@@ -225,7 +225,7 @@ If another project rebuilds this UI, it should implement all of the following:
 Use the following prompt in the target repository:
 
 ```text
-I want you to implement a desktop UI that matches the Omini MK37 behavior and integration contract.
+I want you to implement a desktop UI that matches the OMINI behavior and integration contract.
 
 Build a Tkinter-based assistant UI with:
 - Non-resizable centered window, max size 984x816.
@@ -256,7 +256,7 @@ Behavior requirements:
 
 Engineering constraints:
 - Keep UI updates thread-safe (marshal non-UI thread log/state updates to Tk main thread).
-- Keep the look and feel close to Omini MK37 while making code cleaner and modular.
+- Keep the look and feel close to OMINI while making code cleaner and modular.
 
 Deliverables:
 1) ui module/class implementation

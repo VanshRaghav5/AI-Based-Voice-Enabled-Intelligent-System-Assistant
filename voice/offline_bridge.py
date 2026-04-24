@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 import socket
 import subprocess
 import tempfile
@@ -10,6 +12,7 @@ import uuid
 from pathlib import Path
 
 import numpy as np
+import requests
 import scipy.io.wavfile as wav
 import sounddevice as sd
 
@@ -28,6 +31,8 @@ class OfflineVoiceBridge:
         self.espeak_data = piper_dir / "espeak-ng-data"
         self.piper_model = piper_dir / "en_US-danny-low.onnx"
         self.piper_config = piper_dir / "en_US-danny-low.onnx.json"
+        self.ollama_base_url = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_0")
 
     @staticmethod
     def has_internet(timeout: float = 1.2) -> bool:
@@ -86,6 +91,127 @@ class OfflineVoiceBridge:
                 self._stt_backend = "unavailable"
                 self._stt_model = None
                 return False
+
+    def ollama_available(self, timeout: float = 1.0) -> bool:
+        try:
+            resp = requests.get(f"{self.ollama_base_url}/api/tags", timeout=timeout)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def ask_ollama(self, user_text: str, system_prompt: str = "", timeout: float = 45.0) -> str:
+        text = str(user_text or "").strip()
+        if not text:
+            return ""
+
+        messages = []
+        if system_prompt.strip():
+            messages.append({"role": "system", "content": system_prompt.strip()})
+        messages.append({"role": "user", "content": text})
+
+        payload = {
+            "model": self.ollama_model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": 0.4,
+            },
+        }
+
+        try:
+            resp = requests.post(
+                f"{self.ollama_base_url}/api/chat",
+                json=payload,
+                timeout=timeout,
+            )
+            if resp.status_code != 200:
+                return ""
+
+            data = resp.json() if resp.content else {}
+            msg = data.get("message") if isinstance(data, dict) else None
+            content = msg.get("content", "") if isinstance(msg, dict) else ""
+            return str(content or "").strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _extract_json_object(text: str) -> dict | None:
+        raw = str(text or "").strip()
+        if not raw:
+            return None
+
+        # Try direct JSON first.
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            pass
+
+        # Fallback: first JSON object block in model output.
+        match = re.search(r"\{[\s\S]*\}", raw)
+        if not match:
+            return None
+        try:
+            parsed = json.loads(match.group(0))
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+
+    def plan_offline_turn(
+        self,
+        user_text: str,
+        *,
+        allowed_tools: list[str],
+        system_prompt: str = "",
+        timeout: float = 35.0,
+    ) -> dict:
+        text = str(user_text or "").strip()
+        if not text:
+            return {"mode": "respond", "reply": ""}
+
+        tools_csv = ", ".join(allowed_tools)
+        planner_prompt = (
+            f"{system_prompt}\n\n"
+            "You are an offline command router. "
+            "Decide whether to answer directly or call one local tool. "
+            f"Allowed tools: {tools_csv}. "
+            "Return ONLY valid JSON with this schema: "
+            "{\"mode\":\"respond|tool\",\"reply\":\"...\",\"tool_name\":\"...\",\"args\":{}}. "
+            "If mode is tool, include tool_name and args; reply may be short confirmation text. "
+            "If mode is respond, include reply and leave tool_name empty and args as {}."
+        )
+
+        model_out = self.ask_ollama(text, system_prompt=planner_prompt, timeout=timeout)
+        parsed = self._extract_json_object(model_out)
+        if not parsed:
+            return {"mode": "respond", "reply": model_out or "", "tool_name": "", "args": {}}
+
+        mode = str(parsed.get("mode", "respond")).strip().lower()
+        if mode not in {"respond", "tool"}:
+            mode = "respond"
+
+        tool_name = str(parsed.get("tool_name", "")).strip()
+        args = parsed.get("args", {})
+        if not isinstance(args, dict):
+            args = {}
+
+        reply = str(parsed.get("reply", "")).strip()
+
+        if mode == "tool" and tool_name not in allowed_tools:
+            # Safety fallback if model proposes non-allowed tool.
+            return {
+                "mode": "respond",
+                "reply": reply or "I cannot run that action offline.",
+                "tool_name": "",
+                "args": {},
+            }
+
+        return {
+            "mode": mode,
+            "reply": reply,
+            "tool_name": tool_name,
+            "args": args,
+        }
 
     def record_once(self, duration: float = 4.0, sample_rate: int = 16000) -> str:
         """Capture one short voice chunk and return temporary wav path."""

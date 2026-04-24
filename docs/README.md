@@ -7,6 +7,16 @@ The project runs in two modes:
 - Online mode: live voice interaction through Gemini
 - Offline fallback: local STT and TTS through the offline bridge when internet is unavailable
 
+## Documentation Folder
+
+All project documentation is centralized in `docs/`:
+
+- `README.md` (this file)
+- `DEMO_COMMANDS.md`
+- `FUTURE_EXTENSION_COMMANDS.md`
+- `FULL_UNDERSTANDING_REPORT.md`
+- `UI_HANDOFF_REPORT.md`
+
 ---
 
 ## What It Does
@@ -95,9 +105,14 @@ flowchart TB
 OMINI_ASSISTANT_AI/
 ├── main.py                  # Entry point and live assistant loop
 ├── ui.py                    # PySide6 desktop UI
-├── readme.md
 ├── requirements.txt
 ├── setup.py                 # Convenience installer
+├── docs/
+│   ├── README.md
+│   ├── DEMO_COMMANDS.md
+│   ├── FUTURE_EXTENSION_COMMANDS.md
+│   ├── FULL_UNDERSTANDING_REPORT.md
+│   └── UI_HANDOFF_REPORT.md
 ├── config/
 │   └── api_keys.json        # Gemini API key and related config
 ├── core/
