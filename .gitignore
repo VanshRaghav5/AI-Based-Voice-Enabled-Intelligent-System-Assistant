@@ -1,0 +1,38 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# Build / packaging outputs
+build/
+dist/
+*.egg-info/
+*.spec
+
+# Environment and secrets
+.env
+.env.*
+config/api_keys.json
+
+# App-generated data
+memory/long_term.json
+*.log
+*.tmp
+*.bak
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
