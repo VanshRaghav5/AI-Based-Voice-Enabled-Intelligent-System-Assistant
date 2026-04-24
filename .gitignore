@@ -29,7 +29,6 @@ test-results/
 logs/
 .ipynb_checkpoints/
 .python-version
-.omini/
 
 # Environment and secrets
 .env
@@ -42,9 +41,19 @@ memory/long_term.json
 *.tmp
 *.bak
 
-# Docs build outputs
-docs/_build/
-docs/site/
+# Piper offline TTS assets: ignore all, keep only required runtime/model files
+voice/tts/piper/**
+!voice/tts/piper/
+!voice/tts/piper/piper.exe
+!voice/tts/piper/piper_phonemize.dll
+!voice/tts/piper/espeak-ng.dll
+!voice/tts/piper/onnxruntime.dll
+!voice/tts/piper/onnxruntime_providers_shared.dll
+!voice/tts/piper/libtashkeel_model.ort
+!voice/tts/piper/en_US-danny-low.onnx
+!voice/tts/piper/en_US-danny-low.onnx.json
+!voice/tts/piper/espeak-ng-data/
+!voice/tts/piper/espeak-ng-data/**
 
 # OS/editor files
 .DS_Store
