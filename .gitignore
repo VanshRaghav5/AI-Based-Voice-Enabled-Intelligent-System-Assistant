@@ -18,6 +18,17 @@ build/
 dist/
 *.egg-info/
 *.spec
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+playwright-report/
+test-results/
+
+# Local runtime artifacts
+logs/
+.ipynb_checkpoints/
+.python-version
 
 # Environment and secrets
 .env
