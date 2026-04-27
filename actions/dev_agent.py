@@ -5,6 +5,25 @@ import re
 import time
 from pathlib import Path
 
+# Security imports
+try:
+    from security import (
+        check_code_execution_limit, check_file_write_limit,
+        create_file_backup, validate_path_input,
+        validate_filename_input, SecurityLogger
+    )
+    _SECURITY_AVAILABLE = True
+except ImportError:
+    _SECURITY_AVAILABLE = False
+    def check_code_execution_limit(): return (True, "OK")
+    def check_file_write_limit(): return (True, "OK")
+    def create_file_backup(p): return None
+    def validate_path_input(p): return (True, "")
+    def validate_filename_input(f): return (True, "")
+    class SecurityLogger:
+        @staticmethod
+        def log_event(*a, **kw): pass
+
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -219,6 +238,12 @@ Code for {file_path}:"""
 
         full_path = project_dir / file_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Security: Create backup before overwriting
+        if full_path.exists() and _SECURITY_AVAILABLE:
+            backup = create_file_backup(full_path)
+            print(f"[DevAgent] 🔒 Backup created: {backup}")
+
         full_path.write_text(code, encoding="utf-8")
 
         print(f"[DevAgent] ✅ Written: {file_path} ({len(code)} chars)")
@@ -417,6 +442,11 @@ Fixed code for {fix_path}:"""
 
             full_path = project_dir / fix_path
             full_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Security: Create backup before overwriting
+            if full_path.exists() and _SECURITY_AVAILABLE:
+                backup = create_file_backup(full_path)
+
             full_path.write_text(fixed, encoding="utf-8")
 
             updated_codes[fix_path] = fixed
@@ -586,6 +616,35 @@ def dev_agent(
 
     if not description:
         return "Please describe the project you want me to build, sir."
+
+    # ── Security: Rate limit code execution ─────────────────────────────
+    allowed, msg = check_code_execution_limit()
+    if not allowed:
+        SecurityLogger.log_event("CODE_EXEC_LIMIT", {"action": "dev_agent", "reason": msg})
+        return f"Security: {msg}"
+
+    # ── Security: Rate limit file writes ───────────────────────────
+    allowed, msg = check_file_write_limit()
+    if not allowed:
+        SecurityLogger.log_event("FILE_WRITE_LIMIT", {"action": "dev_agent"})
+        return f"Security: {msg}"
+
+    # ── Security: Validate description for path traversal ───────────
+    if description:
+        is_valid, err = (True, "")
+        if _SECURITY_AVAILABLE:
+            is_valid, err = validate_path_input(description)
+        if not is_valid:
+            SecurityLogger.log_path_traversal_blocked(description)
+            return f"Security error: {err}"
+
+    # ── Security: Validate project_name ─────────────────────────────
+    if project_name:
+        is_valid, err = (True, "")
+        if _SECURITY_AVAILABLE:
+            is_valid, err = validate_filename_input(project_name)
+        if not is_valid:
+            return f"Security error: {err}"
 
     return _build_project(
         description  = description,
