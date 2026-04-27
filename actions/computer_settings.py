@@ -1,9 +1,11 @@
 import json
 import re
+import ctypes
 import sys
 import time
 import subprocess
 import platform
+import shutil
 from pathlib import Path
 
 try:
@@ -49,37 +51,49 @@ def _get_macos_wifi_interface() -> str:
         pass
     return "en0" 
 
+
+def _run_checked(command, *, shell: bool = False, timeout: int = 5):
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        shell=shell,
+        timeout=timeout,
+        check=True,
+    )
+
+
+def _windows_volume_key(vk_code: int, presses: int = 1) -> None:
+    user32 = ctypes.windll.user32
+    for _ in range(presses):
+        user32.keybd_event(vk_code, 0, 0, 0)
+        user32.keybd_event(vk_code, 0, 0x0002, 0)
+
 def volume_up():
     if _OS == "Windows":
-        for _ in range(5): pyautogui.press("volumeup")
+        _windows_volume_key(0xAF, 5)
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            "set volume output volume (output volume of (get volume settings) + 10)"],
-            capture_output=True)
+        _run_checked(["osascript", "-e",
+            "set volume output volume (output volume of (get volume settings) + 10)"])
     else:
-        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "+10%"],
-            capture_output=True)
+        _run_checked(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "+10%"])
 
 def volume_down():
     if _OS == "Windows":
-        for _ in range(5): pyautogui.press("volumedown")
+        _windows_volume_key(0xAE, 5)
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            "set volume output volume (output volume of (get volume settings) - 10)"],
-            capture_output=True)
+        _run_checked(["osascript", "-e",
+            "set volume output volume (output volume of (get volume settings) - 10)"])
     else:
-        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "-10%"],
-            capture_output=True)
+        _run_checked(["pactl", "set-sink-volume", "@DEFAULT_SINK@", "-10%"])
 
 def volume_mute():
     if _OS == "Windows":
-        pyautogui.press("volumemute")
+        _windows_volume_key(0xAD)
     elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e", "set volume with output muted"],
-            capture_output=True)
+        _run_checked(["osascript", "-e", "set volume with output muted"])
     else:
-        subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"],
-            capture_output=True)
+        _run_checked(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"])
 
 def volume_set(value: int):
     value = max(0, min(100, int(value)))
@@ -110,61 +124,51 @@ def volume_set(value: int):
 
 def brightness_up():
     if _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to key code 144'],
-            capture_output=True)
+        _run_checked(["osascript", "-e",
+            'tell application "System Events" to key code 144'])
     elif _OS == "Linux":
-        if subprocess.run(["which", "brightnessctl"],
-                capture_output=True).returncode == 0:
-            subprocess.run(["brightnessctl", "set", "+10%"], capture_output=True)
+        if shutil.which("brightnessctl"):
+            _run_checked(["brightnessctl", "set", "+10%"])
         else:
-            subprocess.run(
+            _run_checked(
                 'xrandr --output $(xrandr | grep " connected" | head -1 | cut -d " " -f1)'
                 ' --brightness $(python3 -c "import subprocess; '
                 'b=float(subprocess.check_output([\"xrandr\",\"--verbose\"]).decode()'
                 '.split(\"Brightness:\")[1].split()[0]); print(min(1.0,b+0.1))")',
-                shell=True, capture_output=True
+                shell=True,
             )
     else:
-        try:
-            subprocess.run(
-                ["powershell", "-Command",
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
-                 ".WmiSetBrightness(1, [math]::Min(100, "
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness + 10))"],
-                capture_output=True, timeout=5
-            )
-        except Exception as e:
-            print(f"[Settings] Brightness up failed on Windows: {e}")
+        _run_checked(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
+             ".WmiSetBrightness(1, [math]::Min(100, "
+             "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness + 10))"],
+            timeout=5,
+        )
 
 def brightness_down():
     if _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell application "System Events" to key code 145'],
-            capture_output=True)
+        _run_checked(["osascript", "-e",
+            'tell application "System Events" to key code 145'])
     elif _OS == "Linux":
-        if subprocess.run(["which", "brightnessctl"],
-                capture_output=True).returncode == 0:
-            subprocess.run(["brightnessctl", "set", "10%-"], capture_output=True)
+        if shutil.which("brightnessctl"):
+            _run_checked(["brightnessctl", "set", "10%-"])
         else:
-            subprocess.run(
+            _run_checked(
                 'xrandr --output $(xrandr | grep " connected" | head -1 | cut -d " " -f1)'
                 ' --brightness $(python3 -c "import subprocess; '
                 'b=float(subprocess.check_output([\"xrandr\",\"--verbose\"]).decode()'
                 '.split(\"Brightness:\")[1].split()[0]); print(max(0.1,b-0.1))")',
-                shell=True, capture_output=True
+                shell=True,
             )
     else:
-        try:
-            subprocess.run(
-                ["powershell", "-Command",
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
-                 ".WmiSetBrightness(1, [math]::Max(0, "
-                 "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness - 10))"],
-                capture_output=True, timeout=5
-            )
-        except Exception as e:
-            print(f"[Settings] Brightness down failed on Windows: {e}")
+        _run_checked(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightnessMethods)"
+             ".WmiSetBrightness(1, [math]::Max(0, "
+             "(Get-WmiObject -Namespace root/wmi -Class WmiMonitorBrightness).CurrentBrightness - 10))"],
+            timeout=5,
+        )
 
 def close_app():
     if _OS == "Darwin": pyautogui.hotkey("command", "q")

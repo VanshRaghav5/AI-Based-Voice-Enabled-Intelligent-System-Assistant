@@ -10,6 +10,27 @@ try:
 except ImportError:
     _SEND2TRASH = False
 
+# Security imports
+try:
+    from security import (
+        validate_path_input, validate_filename_input, sanitize_path_input,
+        sanitize_text_input, check_file_write_limit, create_file_backup,
+        SecurityLogger
+    )
+    _SECURITY_AVAILABLE = True
+except ImportError:
+    _SECURITY_AVAILABLE = False
+    # Fallback: no security (backwards compat)
+    def validate_path_input(path): return (True, "")
+    def validate_filename_input(fn): return (True, "")
+    def sanitize_path_input(path): return path
+    def sanitize_text_input(t): return t
+    def check_file_write_limit(): return (True, "OK")
+    def create_file_backup(p): return None
+    class SecurityLogger:
+        @staticmethod
+        def log_event(*a, **kw): pass
+
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 _SAFE_ROOTS: list[Path] = [
@@ -257,6 +278,10 @@ def rename_file(path: str, name: str = "", new_name: str = "") -> str:
         if new_path.exists():
             return f"A file named '{new_name}' already exists here."
 
+        # Security: Create backup before rename
+        if _SECURITY_AVAILABLE:
+            create_file_backup(target)
+
         target.rename(new_path)
         return f"Renamed: {target.name} → {new_name}"
 
@@ -291,6 +316,11 @@ def write_file(path: str, name: str = "", content: str = "",
         target = (base / name) if name else base
         if not _is_safe_path(target):
             return f"Access denied: {target}"
+
+        # Security: Create backup before overwriting
+        if target.exists() and _SECURITY_AVAILABLE:
+            backup = create_file_backup(target)
+
         target.parent.mkdir(parents=True, exist_ok=True)
         mode = "a" if append else "w"
         with open(target, mode, encoding="utf-8") as f:
@@ -480,6 +510,44 @@ def file_controller(
 
     if player:
         player.write_log(f"[file] {action} {name or path}")
+
+    # ── Security: Rate limit for write operations ──────────────────────
+    write_actions = {"create_file", "write", "create_folder", "move", "copy", "delete"}
+    if action in write_actions:
+        allowed, msg = check_file_write_limit()
+        if not allowed:
+            SecurityLogger.log_event("FILE_WRITE_LIMIT", {"action": action, "reason": msg})
+            return f"Security: {msg}"
+
+    # ── Security: Validate path and name inputs ─────────────────────────
+    if path:
+        is_valid, err = validate_path_input(path)
+        if not is_valid:
+            SecurityLogger.log_path_traversal_blocked(path)
+            return f"Security error: {err}"
+        path = sanitize_path_input(path)
+
+    if name:
+        is_valid, err = validate_filename_input(name)
+        if not is_valid:
+            return f"Security error: {err}"
+        name = sanitize_path_input(name)
+
+    # ── Security: Validate destination for move/copy operations ──────────────────
+    destination = params.get("destination", "")
+    if destination:
+        is_valid, err = validate_path_input(destination)
+        if not is_valid:
+            SecurityLogger.log_path_traversal_blocked(destination)
+            return f"Security error: {err}"
+        params["destination"] = sanitize_path_input(destination)
+
+    # ── Security: Validate new_name for rename ────────────────────────────────
+    new_name = params.get("new_name", "")
+    if new_name:
+        is_valid, err = validate_filename_input(new_name)
+        if not is_valid:
+            return f"Security error: {err}"
 
     try:
         if action == "list":
