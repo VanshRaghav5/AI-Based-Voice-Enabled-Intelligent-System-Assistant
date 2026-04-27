@@ -13,6 +13,13 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+# Import security for authentication
+try:
+    from security import get_auth_manager, authenticate_user
+    _SECURITY_AVAILABLE = True
+except ImportError:
+    _SECURITY_AVAILABLE = False
+
 
 def get_base_dir() -> Path:
 	if getattr(sys, "frozen", False):
@@ -40,6 +47,232 @@ C_GREEN = "#00ff88"
 C_RED = "#ff3333"
 C_MUTED = "#ff3366"
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# THEMES - Multiple color schemes for UI customization
+# ═══════════════════════════════════════════════════════════════════════
+THEMES = {
+    "default": {
+        "primary": "#00d4ff", "accent": "#ff6600", "glow": "#00d4ff",
+        "secondary": "#007a99", "dim": "#003344", "bg": "#010c10"
+    },
+    "red": {
+        "primary": "#ff4400", "accent": "#ff8800", "glow": "#ff4400",
+        "secondary": "#992200", "dim": "#441100", "bg": "#100800"
+    },
+    "purple": {
+        "primary": "#cc00ff", "accent": "#ff00cc", "glow": "#cc00ff",
+        "secondary": "#770099", "dim": "#330044", "bg": "#100810"
+    },
+    "matrix": {
+        "primary": "#00ff00", "accent": "#88ff00", "glow": "#00ff00",
+        "secondary": "#009900", "dim": "#003300", "bg": "#000800"
+    },
+}
+
+_current_theme = "default"
+_animation_intensity = 1.0
+_sound_enabled = False
+_screen_shake_offset = (0, 0)
+_click_ripples: list[tuple[int, int, float]] = []
+_hover_highlights: list[tuple[int, int, int, int]] = []
+
+
+class LoginScreen(QtWidgets.QWidget):
+    """Login screen for authentication."""
+
+    login_success = QtCore.Signal(str, str)  # username, password
+
+    def __init__(self):
+        # Create QApplication first
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            app = QtWidgets.QApplication(sys.argv)
+
+        super().__init__()
+        self._setup_ui()
+
+    def _setup_ui(self):
+        self.setFixedSize(420, 420)
+        self.setWindowTitle("OMINI - Login")
+        self.setStyleSheet(f"background: {C_BG};")
+
+        # Main container with border
+        container = QtWidgets.QWidget()
+        container.setObjectName("container")
+        container.setStyleSheet(f"""
+            QWidget#container {{
+                background: {C_PANEL};
+                border: 2px solid {C_PRI};
+                border-radius: 15px;
+            }}
+        """)
+
+        main_layout = QtWidgets.QVBoxLayout()
+        main_layout.setContentsMargins(20, 15, 20, 15)
+        main_layout.setSpacing(12)
+        container.setLayout(main_layout)
+        self.setLayout(main_layout)
+        main_layout.addWidget(container)
+
+        # Title with glow effect - reduced size
+        title = QtWidgets.QLabel("O M I N I")
+        title.setStyleSheet("""
+            color: #00d4ff;
+            font-size: 28px;
+            font-weight: bold;
+            letter-spacing: 6px;
+            padding: 5px;
+        """)
+        title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        title.setMinimumHeight(40)
+        main_layout.addWidget(title)
+
+        # Subtitle
+        subtitle = QtWidgets.QLabel("Sign in to continue")
+        subtitle.setStyleSheet("""
+            color: #8ffcff;
+            font-size: 12px;
+            padding-bottom: 8px;
+        """)
+        subtitle.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(subtitle)
+
+        # Username field
+        self.username_edit = QtWidgets.QLineEdit()
+        self.username_edit.setPlaceholderText("Username")
+        self.username_edit.setStyleSheet("""
+            QLineEdit {
+                background: #0a1a1a;
+                color: #ffffff;
+                border: 1px solid #005566;
+                border-radius: 8px;
+                padding: 12px;
+                font-size: 14px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #00d4ff;
+                background: #0f2020;
+            }
+            QLineEdit::placeholder {
+                color: #406066;
+            }
+        """)
+        self.username_edit.setMinimumHeight(45)
+        main_layout.addWidget(self.username_edit)
+
+        # Password field
+        self.password_edit = QtWidgets.QLineEdit()
+        self.password_edit.setPlaceholderText("Password")
+        self.password_edit.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        self.password_edit.setStyleSheet("""
+            QLineEdit {
+                background: #0a1a1a;
+                color: #ffffff;
+                border: 1px solid #005566;
+                border-radius: 8px;
+                padding: 12px;
+                font-size: 14px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #00d4ff;
+                background: #0f2020;
+            }
+            QLineEdit::placeholder {
+                color: #406066;
+            }
+        """)
+        self.password_edit.setMinimumHeight(45)
+        self.password_edit.returnPressed.connect(self._do_login)
+        main_layout.addWidget(self.password_edit)
+
+        # Error label
+        self.error_label = QtWidgets.QLabel("")
+        self.error_label.setStyleSheet("""
+            color: #ff4444;
+            font-size: 12px;
+            padding: 5px;
+        """)
+        self.error_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.error_label)
+
+        # Login button
+        self.login_btn = QtWidgets.QPushButton("SIGN IN")
+        self.login_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.login_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #00a0cc, stop:1 #00d4ff);
+                color: #000000;
+                border: none;
+                border-radius: 8px;
+                padding: 14px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #00c0ee, stop:1 #00eeff);
+            }
+            QPushButton:pressed {
+                background: #0088aa;
+            }
+        """)
+        self.login_btn.setMinimumHeight(45)
+        self.login_btn.clicked.connect(self._do_login)
+        main_layout.addWidget(self.login_btn)
+
+        # Guest button
+        guest_btn = QtWidgets.QPushButton("Continue as Guest")
+        guest_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        guest_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #8ffcff;
+                border: 1px solid #005566;
+                border-radius: 8px;
+                padding: 12px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                border: 1px solid #00d4ff;
+                color: #00d4ff;
+            }
+        """)
+        guest_btn.setMinimumHeight(40)
+        guest_btn.clicked.connect(self._login_guest)
+        main_layout.addWidget(guest_btn)
+
+        # Version label
+        ver = QtWidgets.QLabel("v2.0")
+        ver.setStyleSheet("""
+            color: #304455;
+            font-size: 10px;
+            padding-top: 10px;
+        """)
+        ver.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(ver)
+
+    def _do_login(self):
+        username = self.username_edit.text().strip()
+        password = self.password_edit.text()
+
+        if not username or not password:
+            self.error_label.setText("Please enter username and password")
+            return
+
+        if _SECURITY_AVAILABLE:
+            success, msg = authenticate_user(username, password)
+            if success:
+                self.login_success.emit(username, password)
+            else:
+                self.error_label.setText(msg)
+        else:
+            # No security module - allow login
+            self.login_success.emit(username, password)
+
+    def _login_guest(self):
+        self.login_success.emit("guest", "")
+
 
 class OminiUI(QtWidgets.QWidget):
 	log_requested = QtCore.Signal(str)
@@ -48,6 +281,12 @@ class OminiUI(QtWidgets.QWidget):
 	def __init__(self, face_path: str, size: tuple[int, int] | None = None):
 		app = QtWidgets.QApplication.instance()
 		if app is None:
+			# Fix DPI awareness warning on Windows
+			try:
+				import ctypes
+				ctypes.windll.shcore.SetProcessDpiAwarenessContext(2)  # Per-Monitor V2
+			except Exception:
+				pass
 			self._app = QtWidgets.QApplication(sys.argv)
 		else:
 			self._app = app
@@ -102,6 +341,20 @@ class OminiUI(QtWidgets.QWidget):
 		self._has_face = False
 		self._load_face(face_path)
 
+		# ═══════════════════════════════════════════════════════════════════════
+		# Advanced UI Features
+		# ═══════════════════════════════════════════════════════════════════════
+		self._mouse_pos = (self.W // 2, self.H // 2)
+		self._orb_offset = (0, 0)
+		self._data_stream_chars = []
+		self._energy_pulse = 0.0
+		self._prev_state = ""
+		self._status_color = QtGui.QColor(C_GREEN)
+		self._status_color_target = QtGui.QColor(C_GREEN)
+		self._start_time = time.time()
+		self._messages_sent = 0
+		self._screen_shake = 0
+
 		self.setAutoFillBackground(True)
 		pal = self.palette()
 		pal.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor(C_BG))
@@ -120,6 +373,7 @@ class OminiUI(QtWidgets.QWidget):
 		self._anim_timer = QtCore.QTimer(self)
 		self._anim_timer.timeout.connect(self._animate)
 		self._anim_timer.start(16)
+		self.setMouseTracking(True)
 
 	def run(self) -> int:
 		self.show()
@@ -249,25 +503,36 @@ class OminiUI(QtWidgets.QWidget):
 		self.state_requested.emit(state)
 
 	def _set_state_impl(self, state: str) -> None:
+		# Energy pulse on state transition
+		if state != self._prev_state and self._prev_state:
+			self._energy_pulse = 20 * _animation_intensity
+		self._prev_state = self._omini_state
+
 		self._omini_state = state
 		if state == "MUTED":
 			self.status_text = "MUTED"
 			self.speaking = False
+			self._status_color = QtGui.QColor(C_MUTED)
 		elif state == "SPEAKING":
 			self.status_text = "SPEAKING"
 			self.speaking = True
+			self._status_color = QtGui.QColor(C_ACC)
 		elif state == "THINKING":
 			self.status_text = "THINKING"
 			self.speaking = False
+			self._status_color = QtGui.QColor(C_ACC2)
 		elif state == "LISTENING":
 			self.status_text = "LISTENING"
 			self.speaking = False
+			self._status_color = QtGui.QColor(C_GREEN)
 		elif state == "PROCESSING":
 			self.status_text = "PROCESSING"
 			self.speaking = False
+			self._status_color = QtGui.QColor(C_ACC2)
 		else:
 			self.status_text = "ONLINE"
 			self.speaking = False
+			self._status_color = QtGui.QColor(C_PRI)
 		self.update()
 
 	def _load_face(self, path: str) -> None:
@@ -511,6 +776,99 @@ class OminiUI(QtWidgets.QWidget):
 		p.setFont(QtGui.QFont("Courier New", 8))
 		p.drawText(QtCore.QRect(0, h - 24, w - 16, 20), QtCore.Qt.AlignmentFlag.AlignRight, "[F4] MUTE")
 
+		# ═══════════════════════════════════════════════════════════════════════════════
+		# Data Stream - Binary/hex numbers flowing around outer rings
+		# ═══════════════════════════════════════════════════════════════════════
+		if self.tick % 3 == 0:
+			if random.random() < 0.3 * _animation_intensity:
+				chars = "01" + format(random.randint(0, 255), '02x')
+				self._data_stream_chars.append({
+					'char': random.choice(chars),
+					'angle': random.uniform(0, 360),
+					'dist': fw * 0.55 + random.uniform(-10, 10),
+					'speed': random.uniform(0.5, 1.5) * _animation_intensity,
+					'alpha': 180
+				})
+
+		p.setFont(QtGui.QFont("Courier New", 7))
+		for ds in self._data_stream_chars[:]:
+			ds['angle'] = (ds['angle'] + ds['speed']) % 360
+			ds['alpha'] = max(0, ds['alpha'] - 4)
+			if ds['alpha'] <= 0:
+				self._data_stream_chars.remove(ds)
+				continue
+			rad = math.radians(ds['angle'])
+			dx = fcx + ds['dist'] * math.cos(rad)
+			dy = fcy + ds['dist'] * math.sin(rad)
+			p.setPen(QtGui.QColor(C_MID))
+			p.setOpacity(ds['alpha'] / 255)
+			p.drawText(int(dx), int(dy), ds['char'])
+		p.setOpacity(1.0)
+
+		# ═══════════════════════════════════════════════════════════════════════
+		# Energy Pulse - Radial energy burst on state transitions
+		# ═══════════════════════════════════════════════════════════════════════
+		if self._energy_pulse > 0:
+			self._energy_pulse -= 3 * _animation_intensity
+			pulse_r = int(self._energy_pulse * 3)
+			pulse_alpha = max(0, int(self._energy_pulse * 8))
+			if pulse_r > 0:
+				p.setPen(QtGui.QPen(self._ac(0, 255, 136, pulse_alpha), 2))
+				p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+				p.drawEllipse(QtCore.QPoint(fcx, fcy), pulse_r, pulse_r)
+
+		# ═══════════════════════════════════════════════════════════════════════
+		# Screen Shake Effect
+		# ═══════════════════════════════════════════════════════════════════════════════
+		if self._screen_shake > 0:
+			shake_x = random.randint(-self._screen_shake, self._screen_shake)
+			shake_y = random.randint(-self._screen_shake, self._screen_shake)
+			p.translate(shake_x, shake_y)
+			self._screen_shake = max(0, self._screen_shake - 1)
+
+		# ═══════════════════════════════════════════════════════════════════════
+		# Click Ripples - Animated ripple on clicks
+		# ═══════════════════════════════════════════════════════════════════════
+		for rip in _click_ripples[:]:
+			rx, ry, age = rip
+			age += 2 * _animation_intensity
+			radius = int(age * 2)
+			alpha = max(0, 255 - int(age * 5))
+			if alpha <= 0:
+				_click_ripples.remove(rip)
+				continue
+			p.setPen(QtGui.QPen(self._ac(0, 212, 255, alpha), 2))
+			p.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+			p.drawEllipse(QtCore.QPoint(rx, ry), radius, radius)
+			_click_ripples[_click_ripples.index(rip)] = (rx, ry, age)
+
+		# ═══════════════════════════════════════════════════════════════════════
+		# Corner HUD Elements - System stats
+		# ═══════════════════════════════════════════════════════════════════════
+		hud_font = QtGui.QFont("Courier New", 7)
+		p.setFont(hud_font)
+		hud_alpha = 120
+
+		# Top-left: Theme + Intensity
+		p.setPen(QtGui.QColor(C_MID))
+		p.drawText(8, 58, f"THEME:{self._get_theme_name()}")
+		p.drawText(8, 70, f"INTEN:{_animation_intensity:.1f}x")
+
+		# Top-right: Uptime
+		p.setPen(QtGui.QColor(C_MID))
+		p.drawText(QtCore.QRect(w - 80, 50, 72, 16), QtCore.Qt.AlignmentFlag.AlignRight, self._get_uptime())
+		p.drawText(QtCore.QRect(w - 80, 62, 72, 16), QtCore.Qt.AlignmentFlag.AlignRight, f"MSG:{self._messages_sent}")
+
+		# Bottom-left: FPS indicator (simple)
+		if not hasattr(self, '_last_frame_time'):
+			self._last_frame_time = time.time()
+		elapsed = time.time() - self._last_frame_time
+		if elapsed > 0:
+			fps = int(1 / elapsed)
+			p.setPen(QtGui.QColor(C_DIM))
+			p.drawText(8, h - 38, f"FPS:{fps}")
+		self._last_frame_time = time.time()
+
 
 	def write_log(self, text: str) -> None:
 		self.log_requested.emit(text)
@@ -736,4 +1094,83 @@ class OminiUI(QtWidgets.QWidget):
 	def closeEvent(self, event: QtGui.QCloseEvent) -> None:
 		event.accept()
 		os._exit(0)
+
+	# ═══════════════════════════════════════════════════════════════════════
+	# Mouse Tracking - Parallax effect on orb position
+	# ═══════════════════════════════════════════════════════════════════════
+	def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+		global _click_ripples, _hover_highlights
+		pos = event.position().toPoint()
+		self._mouse_pos = (pos.x(), pos.y())
+
+		# Calculate orb offset for parallax (subtle movement)
+		dx = (pos.x() - self.FCX) / self.W * 15 * _animation_intensity
+		dy = (pos.y() - self.FCY) / self.H * 15 * _animation_intensity
+		self._orb_offset = (-dx, -dy)
+
+		# Check hover on orb area
+		dist = ((pos.x() - self.FCX) ** 2 + (pos.y() - self.FCY) ** 2) ** 0.5
+		if dist < self.FACE_SZ // 2:
+			self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+		else:
+			self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+
+		super().mouseMoveEvent(event)
+
+	# ═══════════════════════════════════════════════════════════════════════════════
+	# Click Ripples - Animated ripple effect on clicks
+	# ═══════════════════════════════════════════════════════════════════════
+	def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+		global _click_ripples
+		pos = event.position().toPoint()
+		_click_ripples.append((pos.x(), pos.y(), 0.0))
+		super().mousePressEvent(event)
+
+	# ═══════════════════════════════════════════════════════════════════════════════
+	# Corner HUD - System stats display
+	# ═══════════════════════════════════════════════════════════════════════════════
+	def _get_uptime(self) -> str:
+		elapsed = int(time.time() - self._start_time)
+		h, m, s = elapsed // 3600, (elapsed % 3600) // 60, elapsed % 60
+		return f"{h:02d}:{m:02d}:{s:02d}"
+
+	def _get_theme_name(self) -> str:
+		return _current_theme.upper()
+
+	# ═══════════════════════════════════════════════════════════════════════
+	# Theme & Settings Controls
+	# ═══════════════════════════════════════════════════════════════════════
+	def set_theme(self, theme_name: str) -> None:
+		global _current_theme
+		if theme_name in THEMES:
+			_current_theme = theme_name
+
+	def get_theme(self) -> str:
+		return _current_theme
+
+	def set_animation_intensity(self, intensity: float) -> None:
+		global _animation_intensity
+		_animation_intensity = max(0.1, min(2.0, intensity))
+
+	def get_animation_intensity(self) -> float:
+		return _animation_intensity
+
+	def set_sound_enabled(self, enabled: bool) -> None:
+		global _sound_enabled
+		_sound_enabled = enabled
+
+	def is_sound_enabled(self) -> bool:
+		return _sound_enabled
+
+	def trigger_screen_shake(self) -> None:
+		self._screen_shake = 10
+
+	def toggle_fullscreen(self) -> None:
+		if self.isFullScreen():
+			self.showNormal()
+		else:
+			self.showFullScreen()
+
+	def increment_message_count(self) -> None:
+		self._messages_sent += 1
 
