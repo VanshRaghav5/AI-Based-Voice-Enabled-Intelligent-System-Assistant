@@ -61,3 +61,13 @@ Thumbs.db
 Desktop.ini
 .vscode/
 .idea/
+
+# Extra build/temp files
+run_omini.py
+run_omini.spec
+launcher.py
+launcher.vbs
+launcher.spec
+OMINI.exe
+OMINI.iss
+*.log
