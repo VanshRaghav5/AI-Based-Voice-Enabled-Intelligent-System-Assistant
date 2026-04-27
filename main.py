@@ -9,7 +9,14 @@ from pathlib import Path
 import sounddevice as sd
 from google import genai
 from google.genai import types
+from security import (
+    check_api_rate_limit, check_tool_rate_limit, check_file_write_limit,
+    check_code_execution_limit, sanitize_path_input, validate_path_input,
+    validate_filename_input, sanitize_text_input, SecurityLogger,
+    authorize_tool, authenticate_user, get_auth_manager
+)
 from ui import OminiUI
+from voice.offline_bridge import OfflineVoiceBridge
 from memory.memory_manager import (
     load_memory, update_memory, format_memory_for_prompt,
 )
@@ -388,6 +395,38 @@ TOOL_DECLARATIONS = [
         }
     },
     {
+        "name": "auth_login",
+        "description": (
+            "Login to unlock restricted tools. "
+            "Call this with username and password to authenticate. "
+            "After login, use auth_logout when done."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "username": {"type": "STRING", "description": "Username"},
+                "password": {"type": "STRING", "description": "Password"},
+            },
+            "required": ["username", "password"]
+        }
+    },
+    {
+        "name": "auth_logout",
+        "description": "Logout to lock restricted tools.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        }
+    },
+    {
+        "name": "auth_status",
+        "description": "Check current authentication status.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        }
+    },
+    {
         "name": "save_memory",
         "description": (
             "Save an important personal fact about the user to long-term memory. "
@@ -432,17 +471,139 @@ class OminiLive:
         self._speaking_lock = threading.Lock()
         self.ui.on_text_command = self._on_text_command
         self._turn_done_event: asyncio.Event | None = None
+        self._queued_offline_turns: list[str] = []
+        self._offline_voice = OfflineVoiceBridge(BASE_DIR)
+        self._offline_mode_announced = False
+        self._offline_system_prompt = (
+            "You are OMINI running in offline fallback mode. "
+            "Be concise, practical, and transparent about offline limitations. "
+            "If a task requires internet, say so briefly and suggest the next best local action."
+        )
+        self._offline_allowed_tools = {
+            "open_app",
+            "computer_settings",
+            "file_controller",
+            "desktop_control",
+            "computer_control",
+            "reminder",
+            "shutdown_omini",
+        }
 
     def _on_text_command(self, text: str):
+        clean = (text or "").strip()
+        if not clean:
+            return
+
         if not self._loop or not self.session:
+            if self._offline_voice.has_internet():
+                self._queue_offline_turn(clean)
+            else:
+                threading.Thread(
+                    target=self._respond_with_offline_llm,
+                    args=(clean,),
+                    daemon=True,
+                ).start()
             return
         asyncio.run_coroutine_threadsafe(
             self.session.send_client_content(
-                turns={"parts": [{"text": text}]},
+                turns={"parts": [{"text": clean}]},
                 turn_complete=True
             ),
             self._loop
         )
+
+    def _queue_offline_turn(self, text: str):
+        self._queued_offline_turns.append(text)
+        self.ui.write_log("SYS: Saved command for retry when internet is back.")
+        self._offline_voice.speak("Saved. I will run this when internet is back.")
+
+    def _execute_offline_tool(self, tool_name: str, args: dict) -> str:
+        result = "Done."
+        try:
+            if tool_name == "open_app":
+                r = open_app(parameters=args, response=None, player=self.ui)
+                result = r or f"Opened {args.get('app_name', 'app')}."
+            elif tool_name == "computer_settings":
+                r = computer_settings(parameters=args, response=None, player=self.ui)
+                result = r or "Computer settings updated."
+            elif tool_name == "file_controller":
+                r = file_controller(parameters=args, player=self.ui)
+                result = r or "File operation completed."
+            elif tool_name == "desktop_control":
+                r = desktop_control(parameters=args, player=self.ui)
+                result = r or "Desktop task completed."
+            elif tool_name == "computer_control":
+                r = computer_control(parameters=args, player=self.ui)
+                result = r or "Computer action completed."
+            elif tool_name == "reminder":
+                r = reminder(parameters=args, response=None, player=self.ui)
+                result = r or "Reminder set."
+            elif tool_name == "shutdown_omini":
+                self.ui.write_log("SYS: Shutdown requested (offline mode).")
+                result = "Goodbye, sir."
+                def _shutdown():
+                    import time, os
+                    time.sleep(1)
+                    os._exit(0)
+                threading.Thread(target=_shutdown, daemon=True).start()
+            else:
+                result = "This action is not available offline."
+        except Exception as e:
+            result = f"Offline tool '{tool_name}' failed: {e}"
+            traceback.print_exc()
+        return str(result)
+
+    def _speak_offline_reply(self, text: str):
+        clean_reply = _clean_transcript(text)
+        if not clean_reply:
+            return
+        self.ui.write_log(f"Omini: {clean_reply}")
+        self.ui.set_state("SPEAKING")
+        self._offline_voice.speak(clean_reply)
+
+    def _respond_with_offline_llm(self, user_text: str):
+        self.ui.set_state("THINKING")
+
+        plan = self._offline_voice.plan_offline_turn(
+            user_text,
+            allowed_tools=sorted(self._offline_allowed_tools),
+            system_prompt=self._offline_system_prompt,
+        )
+
+        if plan.get("mode") == "tool":
+            tool_name = str(plan.get("tool_name", "")).strip()
+            args = plan.get("args", {})
+            if not isinstance(args, dict):
+                args = {}
+
+            self.ui.write_log(f"SYS: Offline tool call -> {tool_name} {args}")
+            tool_result = self._execute_offline_tool(tool_name, args)
+            spoken = str(plan.get("reply", "")).strip() or tool_result
+            self._speak_offline_reply(spoken)
+        else:
+            reply = str(plan.get("reply", "")).strip()
+            if reply:
+                self._speak_offline_reply(reply)
+            else:
+                self.ui.write_log("SYS: Local Ollama unavailable; command saved for online retry.")
+                self._queued_offline_turns.append(user_text)
+
+        if not self.ui.muted:
+            self.ui.set_state("LISTENING")
+
+    async def _replay_offline_turns(self):
+        if not self._queued_offline_turns or not self.session:
+            return
+
+        queued = list(self._queued_offline_turns)
+        self._queued_offline_turns.clear()
+
+        self.ui.write_log(f"SYS: Replaying {len(queued)} offline command(s).")
+        for text in queued:
+            await self.session.send_client_content(
+                turns={"parts": [{"text": text}]},
+                turn_complete=True,
+            )
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
@@ -507,6 +668,33 @@ class OminiLive:
     async def _execute_tool(self, fc) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
+
+        # ── Authorization check for sensitive tools ───────────────────────────
+        sensitive_tools = {
+            "file_controller": ["write", "create_file", "delete", "move", "copy"],
+            "code_helper": ["write", "edit", "run"],
+            "dev_agent": None,
+            "send_message": None,
+            "game_updater": None,
+        }
+        if name in sensitive_tools:
+            action = args.get("action", None)
+            allowed, msg = authorize_tool(name, action)
+            if not allowed:
+                print(f"[OMINI] 🔒 Unauthorized: {msg}")
+                return types.FunctionResponse(
+                    id=fc.id, name=name,
+                    response={"result": msg, "error": True}
+                )
+
+        # ── Rate limiting check ───────────────────────────────────────────────
+        allowed, message = check_tool_rate_limit()
+        if not allowed:
+            print(f"[OMINI] ⚠️ Rate limit: {message}")
+            return types.FunctionResponse(
+                id=fc.id, name=name,
+                response={"result": message, "error": True}
+            )
 
         print(f"[OMINI] 🔧 {name}  {args}")
         self.ui.set_state("THINKING")
@@ -614,6 +802,31 @@ class OminiLive:
                     time.sleep(1)
                     os._exit(0)
                 threading.Thread(target=_shutdown, daemon=True).start()
+
+            elif name == "auth_login":
+                username = args.get("username", "")
+                password = args.get("password", "")
+                success, msg = authenticate_user(username, password)
+                if success:
+                    get_auth_manager().set_password(username, password)  # Store password
+                    self.ui.write_log(f"SYS: Login success: {msg}")
+                    self.speak(f"Login successful as {username}.")
+                else:
+                    self.ui.write_log(f"SYS: Login failed: {msg}")
+                    result = msg
+                result = msg
+
+            elif name == "auth_logout":
+                get_auth_manager().logout()
+                self.ui.write_log("SYS: Logged out.")
+                self.speak("Logged out. Restricted tools are now locked.")
+
+            elif name == "auth_status":
+                user = get_auth_manager().get_current_user()
+                if user:
+                    result = f"Logged in as: {user}"
+                else:
+                    result = "Not authenticated. Some tools are restricted."
 
             else:
                 result = f"Unknown tool: {name}"
@@ -767,6 +980,10 @@ class OminiLive:
         )
 
         while True:
+            if not self._offline_voice.has_internet():
+                await self._run_offline_mode()
+                continue
+
             try:
                 print("[OMINI] 🔌 Connecting...")
                 self.ui.set_state("THINKING")
@@ -783,8 +1000,10 @@ class OminiLive:
                     self._turn_done_event = asyncio.Event()
 
                     print("[OMINI] ✅ Connected.")
+                    self._offline_mode_announced = False
                     self.ui.set_state("LISTENING")
                     self.ui.write_log("SYS: OMINI online.")
+                    await self._replay_offline_turns()
 
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
@@ -800,8 +1019,62 @@ class OminiLive:
             print("[OMINI] 🔄 Reconnecting in 3s...")
             await asyncio.sleep(3)
 
+    async def _run_offline_mode(self):
+        self.session = None
+        self._loop = None
+        self.set_speaking(False)
+
+        if not self._offline_mode_announced:
+            self._offline_mode_announced = True
+            self.ui.set_state("PROCESSING")
+            self.ui.write_log("SYS: Internet unavailable. Offline voice mode active.")
+            self._offline_voice.speak("Internet is unavailable. Offline voice mode is active.")
+            if self._offline_voice.ollama_available():
+                self.ui.write_log("SYS: Ollama fallback online.")
+                self._offline_voice.speak("Local language model is ready.")
+            else:
+                self.ui.write_log("SYS: Ollama not reachable; commands will be queued.")
+                self._offline_voice.speak("Local model is not reachable. I will queue your commands.")
+
+        while not self._offline_voice.has_internet():
+            self.ui.set_state("LISTENING")
+            text = await asyncio.to_thread(self._offline_voice.listen_and_transcribe_once)
+            if text:
+                clean = _clean_transcript(text)
+                if clean:
+                    self.ui.write_log(f"You: {clean}")
+                    await asyncio.to_thread(self._respond_with_offline_llm, clean)
+            await asyncio.sleep(0.2)
+
+        self.ui.write_log("SYS: Internet restored. Returning to live mode.")
+        self._offline_voice.speak("Internet is back. Returning to live mode.")
+        self._offline_mode_announced = False
+
 
 def main():
+    # Show login screen first
+    from ui import LoginScreen, OminiUI
+    from security import get_auth_manager, authenticate_user
+
+    login = LoginScreen()
+    login.show()
+
+    # Wait for login to complete
+    from PySide6 import QtWidgets
+    logged_in = [False]
+
+    def on_login(username, password):
+        get_auth_manager().set_password(username, password)
+        logged_in[0] = True
+        login.close()
+
+    login.login_success.connect(on_login)
+    QtWidgets.QApplication.exec()
+
+    if not logged_in[0]:
+        return  # Exit if not logged in
+
+    # Now start main UI
     ui = OminiUI("face.png")
 
     def runner():
