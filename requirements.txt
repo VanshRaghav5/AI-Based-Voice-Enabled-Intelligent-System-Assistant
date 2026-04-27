@@ -19,3 +19,4 @@ faster-whisper
 openai-whisper
 torch
 pytest
+keyring
