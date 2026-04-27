@@ -5,6 +5,23 @@ import re
 import time
 from pathlib import Path
 
+# Security imports
+try:
+    from security import (
+        check_code_execution_limit, check_file_write_limit,
+        create_file_backup, verify_filename_input,
+        SecurityLogger, InputValidator
+    )
+    _SECURITY_AVAILABLE = True
+except ImportError:
+    _SECURITY_AVAILABLE = False
+    def check_code_execution_limit(): return (True, "OK")
+    def check_file_write_limit(): return (True, "OK")
+    def create_file_backup(p): return None
+    class SecurityLogger:
+        @staticmethod
+        def log_event(*a, **kw): pass
+
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -67,6 +84,11 @@ def _read_file(file_path: str) -> tuple[str, str]:
 
 def _save_file(path: Path, content: str) -> str:
     try:
+        # Security: Create backup before overwriting
+        if path.exists() and _SECURITY_AVAILABLE:
+            backup = create_file_backup(path)
+            print(f"[Code] 🔒 Backup created: {backup}")
+
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return f"Saved to: {path}"
@@ -535,6 +557,41 @@ def code_helper(
     code        = p.get("code", "").strip()
     args        = p.get("args", [])
     timeout     = int(p.get("timeout", 30))
+
+    # ── Security: Rate limit code execution ─────────────────────────────
+    exec_actions = {"run", "build", "execute"}
+    if action in exec_actions:
+        allowed, msg = check_code_execution_limit()
+        if not allowed:
+            SecurityLogger.log_event("CODE_EXEC_LIMIT", {"action": action, "reason": msg})
+            return f"Security: {msg}"
+
+    # ── Security: Rate limit file writes ───────────────────────────
+    write_actions = {"write", "edit", "build", "optimize", "screen_debug"}
+    if action in write_actions:
+        allowed, msg = check_file_write_limit()
+        if not allowed:
+            SecurityLogger.log_event("FILE_WRITE_LIMIT", {"action": action})
+            return f"Security: {msg}"
+
+    # ── Security: Validate output_path for write ─────────────────
+    if output_path:
+        is_valid, err = (True, "")
+        if _SECURITY_AVAILABLE:
+            is_valid, err = InputValidator.validate_filename(output_path)
+        if not is_valid:
+            return f"Security error: {err}"
+        # Sanitize
+        output_path = output_path.replace("..", "").strip()
+
+    # ── Security: Validate file_path for edit ────────────────────────
+    if file_path:
+        is_valid, err = (True, "")
+        if _SECURITY_AVAILABLE:
+            is_valid, err = InputValidator.validate_path(file_path)
+        if not is_valid:
+            SecurityLogger.log_path_traversal_blocked(file_path)
+            return f"Security error: {err}"
 
     if action == "auto":
         action = _detect_intent(description, file_path, code)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
+from types import SimpleNamespace
 
 
 def _load_action(module_name: str):
@@ -51,6 +53,51 @@ def test_computer_settings_requires_confirmation_for_restart(monkeypatch):
     monkeypatch.setattr(mod, "_PYAUTOGUI", True)
     result = mod.computer_settings({"action": "restart"})
     assert "Please confirm" in result
+
+
+def test_computer_settings_volume_up_uses_windows_key(monkeypatch):
+    mod = _load_action("computer_settings")
+
+    captured = {}
+
+    monkeypatch.setattr(mod, "_windows_volume_key", lambda vk_code, presses=1: captured.update({"vk_code": vk_code, "presses": presses}))
+
+    result = mod.computer_settings({"action": "volume_up"})
+
+    assert result == "Done: volume_up."
+    assert captured == {"vk_code": 0xAF, "presses": 5}
+
+
+def test_computer_settings_brightness_up_checks_subprocess_exit(monkeypatch):
+    mod = _load_action("computer_settings")
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    result = mod.computer_settings({"action": "brightness_up"})
+
+    assert result == "Done: brightness_up."
+    assert calls
+    assert calls[0][1]["check"] is True
+    assert "powershell" in calls[0][0][0].lower()
+
+
+def test_computer_settings_brightness_up_surfaces_failures(monkeypatch):
+    mod = _load_action("computer_settings")
+
+    def fake_run(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(returncode=1, cmd="powershell")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    result = mod.computer_settings({"action": "brightness_up"})
+
+    assert result.startswith("Action failed (brightness_up):")
 
 
 def test_desktop_control_organize(monkeypatch):
