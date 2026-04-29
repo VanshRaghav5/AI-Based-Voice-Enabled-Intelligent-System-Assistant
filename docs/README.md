@@ -201,7 +201,7 @@ The `actions/` folder contains the real workhorses of the assistant. The most im
 
 ### Requirements
 
-- Python 3.10+
+- Python 3.12+
 - Windows recommended for the full desktop experience
 - A valid Gemini API key in `config/api_keys.json`
 - Optional local speech packages for offline mode: `faster-whisper`, `openai-whisper`, and `piper`
