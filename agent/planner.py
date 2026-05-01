@@ -110,6 +110,38 @@ code_helper
 dev_agent
   description: string (required)
   language: string (optional)
+
+system_control_agent
+  action: "lock" | "shutdown" | "shutdown_in" | "restart" | "restart_in" | "sleep" | "kill_process" | "list_processes" (required)
+  minutes: int (optional, for *_in)
+  process_name: string (optional)
+  pid: int (optional)
+
+system_monitor_agent
+  action: "start" | "stop" | "status" | "snapshot" (required)
+
+file_intelligence_agent
+  action: "find_large_files" | "find_duplicates" | "clean_temp_cache" | "disk_trend" (required)
+  path: string (optional)
+  min_size_gb: number (optional)
+
+app_automation_agent
+  action: "send_whatsapp_message" | "check_app_state" (required)
+  app_name: string (optional)
+  receiver: string (optional)
+  message_text: string (optional)
+
+scheduler_agent
+  action: "schedule" | "schedule_defaults" | "cancel" | "list" (required)
+  name: string (optional)
+  interval_seconds: int (optional)
+  job_action: string (optional)
+  payload: object (optional)
+  job_id: string (optional)
+
+activity_replay
+  action: "recent" | "replay_hint" | "replay_last_safe" (required)
+  limit: int (optional)
 EXAMPLES:
 
 Goal: "research mechanical engineering and save it to a notepad file"

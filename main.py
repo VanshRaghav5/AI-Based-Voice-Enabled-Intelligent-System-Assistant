@@ -1,4 +1,5 @@
 ﻿import asyncio
+import inspect
 import re
 import threading
 import json
@@ -37,6 +38,18 @@ from actions.dev_agent         import dev_agent
 from actions.web_search        import web_search as web_search_action
 from actions.computer_control  import computer_control
 from actions.game_updater      import game_updater
+from actions.system_control_agent import system_control_agent
+from actions.file_intelligence_agent import file_intelligence_agent
+from agent.app_state_agent import app_state_agent
+from agent.system_state_monitor import get_system_state_monitor
+from agent.background_scheduler import get_background_scheduler
+from agent.event_automation_engine import get_event_automation_engine
+from core.event_bus import get_event_bus
+from core.activity_logger import get_activity_logger
+from core.activity_replay import ActivityReplay
+from core.safety_layer import get_safety_layer
+from core.persona_manager import get_persona_manager
+from core.voice_manager import get_voice_manager, get_live_voice_manager
 
 
 def get_base_dir():
@@ -68,6 +81,21 @@ def _load_system_prompt() -> str:
             "You are OMINI, Tony Stark's AI assistant. "
             "Be concise, direct, and always use the provided tools to complete tasks. "
             "Never simulate or guess results — always call the appropriate tool."
+        )
+
+
+def _build_persona_prompt() -> str:
+    try:
+        return get_persona_manager().build_prompt_suffix()
+    except Exception:
+        return (
+            "\n[PERSONA: Executive]\n"
+            "Fast, precise, and outcome-driven.\n"
+            "Response rules:\n"
+            "- Lead with the answer.\n"
+            "- Keep replies compact.\n"
+            "- Avoid filler.\n"
+            "Always stay direct, smooth, and clean."
         )
 
 
@@ -382,6 +410,95 @@ TOOL_DECLARATIONS = [
         }
     },
     {
+        "name": "system_control_agent",
+        "description": (
+            "Safe OS control layer for lock, shutdown, restart, sleep and process management. "
+            "Dangerous actions require confirmation_token from a previous prompt."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "lock | shutdown | shutdown_in | restart | restart_in | sleep | kill_process | list_processes"},
+                "minutes": {"type": "INTEGER", "description": "Delay in minutes for shutdown_in/restart_in"},
+                "process_name": {"type": "STRING", "description": "Target process executable name, e.g. chrome.exe"},
+                "pid": {"type": "INTEGER", "description": "Target process id"},
+                "limit": {"type": "INTEGER", "description": "Max process rows for list_processes"},
+                "confirmation_token": {"type": "STRING", "description": "Token returned by safety layer for risky actions"},
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "system_monitor_agent",
+        "description": "Controls and queries background system monitor (CPU/RAM/process/battery/thermal alerts).",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "start | stop | status | snapshot"}
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "file_intelligence_agent",
+        "description": "Advanced file intelligence: large files, duplicates, temp/cache cleanup, disk trend snapshots.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "find_large_files | find_duplicates | clean_temp_cache | disk_trend"},
+                "path": {"type": "STRING", "description": "Target path shortcut or absolute path"},
+                "min_size_gb": {"type": "NUMBER", "description": "Minimum file size in GB"},
+                "limit": {"type": "INTEGER", "description": "Maximum results"},
+                "limit_groups": {"type": "INTEGER", "description": "Maximum duplicate groups"},
+                "confirmation_token": {"type": "STRING", "description": "Token returned by safety layer for risky actions"},
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "app_automation_agent",
+        "description": "Context-aware app automation with state checks before action execution.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "send_whatsapp_message | check_app_state"},
+                "app_name": {"type": "STRING", "description": "Application name for state checks"},
+                "receiver": {"type": "STRING", "description": "Recipient for send actions"},
+                "message_text": {"type": "STRING", "description": "Message body"},
+                "confirmation_token": {"type": "STRING", "description": "Token returned by safety layer for risky actions"},
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "scheduler_agent",
+        "description": "Background recurring scheduler for periodic assistant jobs.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "schedule | schedule_defaults | cancel | list"},
+                "name": {"type": "STRING", "description": "Job name"},
+                "interval_seconds": {"type": "INTEGER", "description": "Recurring interval in seconds"},
+                "job_action": {"type": "STRING", "description": "Job action such as drink_water_reminder or temp_cleanup_reminder"},
+                "payload": {"type": "OBJECT", "description": "Job payload"},
+                "job_id": {"type": "STRING", "description": "Job id for cancel"},
+            },
+            "required": ["action"]
+        }
+    },
+    {
+        "name": "activity_replay",
+        "description": "Audit and replay helper for activity logs.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "recent | replay_hint | replay_last_safe"},
+                "limit": {"type": "INTEGER", "description": "Maximum rows"}
+            },
+            "required": ["action"]
+        }
+    },
+    {
         "name": "shutdown_omini",
         "description": (
             "Shuts down the assistant completely. "
@@ -474,10 +591,9 @@ class OminiLive:
         self._queued_offline_turns: list[str] = []
         self._offline_voice = OfflineVoiceBridge(BASE_DIR)
         self._offline_mode_announced = False
+        self._live_reconnect_requested = False
         self._offline_system_prompt = (
-            "You are OMINI running in offline fallback mode. "
-            "Be concise, practical, and transparent about offline limitations. "
-            "If a task requires internet, say so briefly and suggest the next best local action."
+            self._build_offline_system_prompt()
         )
         self._offline_allowed_tools = {
             "open_app",
@@ -488,6 +604,139 @@ class OminiLive:
             "reminder",
             "shutdown_omini",
         }
+        self._event_bus = get_event_bus()
+        self._activity_logger = get_activity_logger(BASE_DIR)
+        self._activity_replay = ActivityReplay(BASE_DIR)
+        self._safety = get_safety_layer()
+        self._persona_manager = get_persona_manager()
+        self._persona_key = self._persona_manager.get_selected_key()
+        self._voice_manager = get_voice_manager()
+        self._live_voice_manager = get_live_voice_manager()
+        self._live_voice_key = self._live_voice_manager.get_selected_key()
+        self._monitor = get_system_state_monitor()
+        self._scheduler = get_background_scheduler()
+        self._event_engine = get_event_automation_engine()
+
+        self._monitor.start()
+        self._scheduler.start()
+        self._event_engine.start()
+        self._event_bus.subscribe("assistant.suggestion", self._on_assistant_suggestion)
+        self._event_bus.subscribe("scheduler.job_due", self._on_scheduler_job_due)
+        self.ui.persona_changed.connect(self._on_persona_changed)
+        self.ui.voice_changed.connect(self._on_voice_changed)
+        self.ui.live_voice_changed.connect(self._on_live_voice_changed)
+
+        try:
+            self._offline_voice.set_voice_key(self._voice_manager.get_selected_key())
+        except Exception:
+            pass
+
+        # Baseline recurring jobs: hydration reminder every 2h and daily temp cleanup reminder.
+        self._scheduler.schedule(
+            name="hydration_every_2h",
+            interval_seconds=7200,
+            action="drink_water_reminder",
+            payload={"message": "Hydration reminder: drink water."},
+        )
+        self._scheduler.schedule(
+            name="temp_cleanup_daily",
+            interval_seconds=86400,
+            action="temp_cleanup",
+            payload={"message": "Daily temp cleanup executed."},
+        )
+
+    def _build_offline_system_prompt(self) -> str:
+        return (
+            "You are OMINI running in offline fallback mode. "
+            "Be concise, practical, and transparent about offline limitations. "
+            "If a task requires internet, say so briefly and suggest the next best local action."
+            f"{_build_persona_prompt()}"
+        )
+
+    def _get_live_voice_name(self) -> str:
+        key = self._live_voice_key or self._live_voice_manager.get_selected_key()
+        profile = self._live_voice_manager.get_selected_profile()
+        if profile.key != key:
+            profile = self._live_voice_manager.set_selected_key(key)
+        return profile.key
+
+    @staticmethod
+    def _is_live_voice_error(error: Exception) -> bool:
+        text = str(error).lower()
+        return any(
+            phrase in text
+            for phrase in (
+                "voice",
+                "prebuiltvoiceconfig",
+                "prebuilt voice",
+                "invalid argument",
+                "unsupported",
+                "unknown field",
+            )
+        )
+
+    def _request_live_reconnect(self) -> None:
+        self._live_reconnect_requested = True
+        session = self.session
+        loop = self._loop
+        if not session or not loop:
+            return
+
+        close_method = getattr(session, "close", None)
+        if not callable(close_method):
+            return
+
+        try:
+            result = close_method()
+            if inspect.isawaitable(result):
+                asyncio.run_coroutine_threadsafe(result, loop)
+        except Exception:
+            pass
+
+    def _on_persona_changed(self, persona_key: str):
+        self._persona_key = persona_key or self._persona_manager.get_selected_key()
+        self._offline_system_prompt = self._build_offline_system_prompt()
+        self.ui.write_log(f"SYS: Persona updated to {self._persona_key}. Applies on the next live session reconnect.")
+
+    def _on_voice_changed(self, voice_key: str):
+        try:
+            if self._offline_voice.set_voice_key(voice_key):
+                self.ui.write_log(f"SYS: Voice updated to {voice_key}.")
+            else:
+                self.ui.write_log("SYS: Voice update failed; keeping the current voice.")
+        except Exception:
+            self.ui.write_log("SYS: Voice update failed; keeping the current voice.")
+
+    def _on_live_voice_changed(self, live_voice_key: str):
+        self._live_voice_key = live_voice_key or self._live_voice_manager.get_selected_key()
+        self.ui.write_log(f"SYS: Gemini voice updated to {self._live_voice_key}. Reconnecting now.")
+        self._request_live_reconnect()
+
+    def _on_assistant_suggestion(self, event: dict):
+        payload = event.get("payload", {})
+        message = str(payload.get("message", "")).strip()
+        if message:
+            self.ui.write_log(f"SYS SUGGESTION: {message}")
+            if not self.ui.muted:
+                self._offline_voice.speak(message)
+
+    def _on_scheduler_job_due(self, event: dict):
+        payload = event.get("payload", {})
+        action = str(payload.get("action", "")).strip().lower()
+        data = payload.get("payload", {}) or {}
+
+        if action == "temp_cleanup":
+            result = file_intelligence_agent(
+                parameters={"action": "clean_temp_cache"},
+                player=self.ui,
+            )
+            self.ui.write_log(f"SYS SCHEDULER: {result}")
+        elif action == "disk_trend_snapshot":
+            result = file_intelligence_agent(
+                parameters={"action": "disk_trend", "path": data.get("path", "home")},
+                player=self.ui,
+            )
+            self.ui.write_log(f"SYS SCHEDULER: {result}")
 
     def _on_text_command(self, text: str):
         clean = (text or "").strip()
@@ -648,6 +897,7 @@ class OminiLive:
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
+        parts.append(_build_persona_prompt())
 
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"],
@@ -659,7 +909,7 @@ class OminiLive:
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name="Charon"
+                        voice_name=self._get_live_voice_name()
                     )
                 )
             ),
@@ -668,6 +918,8 @@ class OminiLive:
     async def _execute_tool(self, fc) -> types.FunctionResponse:
         name = fc.name
         args = dict(fc.args or {})
+        actor = get_auth_manager().get_current_user() or "guest"
+        action_name = str(args.get("action", name)).strip().lower() or name
 
         # ── Authorization check for sensitive tools ───────────────────────────
         sensitive_tools = {
@@ -676,6 +928,10 @@ class OminiLive:
             "dev_agent": None,
             "send_message": None,
             "game_updater": None,
+            "system_control_agent": None,
+            "file_intelligence_agent": ["clean_temp_cache"],
+            "scheduler_agent": None,
+            "app_automation_agent": None,
         }
         if name in sensitive_tools:
             action = args.get("action", None)
@@ -696,8 +952,63 @@ class OminiLive:
                 response={"result": message, "error": True}
             )
 
+        risk = self._safety.score_risk(name, action_name, args)
+        if self._safety.requires_confirmation(risk):
+            token = str(args.get("confirmation_token", "")).strip()
+            if token:
+                ok, reason = self._safety.validate_confirmation(
+                    token=token,
+                    actor=actor,
+                    tool=name,
+                    action=action_name,
+                    params={k: v for k, v in args.items() if k != "confirmation_token"},
+                )
+                if not ok:
+                    self._activity_logger.log(
+                        actor=actor,
+                        action=action_name,
+                        tool=name,
+                        status="blocked",
+                        details={"reason": reason, "risk": risk},
+                    )
+                    return types.FunctionResponse(
+                        id=fc.id,
+                        name=name,
+                        response={"result": reason, "error": True},
+                    )
+            else:
+                req = self._safety.issue_confirmation(
+                    actor=actor,
+                    tool=name,
+                    action=action_name,
+                    params={k: v for k, v in args.items() if k != "confirmation_token"},
+                )
+                prompt = (
+                    f"Safety confirmation required ({req.risk} risk) for {name}:{action_name}. "
+                    f"Call the same tool again with confirmation_token='{req.token}' within 120 seconds."
+                )
+                self._activity_logger.log(
+                    actor=actor,
+                    action=action_name,
+                    tool=name,
+                    status="pending_confirmation",
+                    details={"risk": req.risk, "token": req.token},
+                )
+                return types.FunctionResponse(
+                    id=fc.id,
+                    name=name,
+                    response={"result": prompt, "error": True},
+                )
+
         print(f"[OMINI] 🔧 {name}  {args}")
         self.ui.set_state("THINKING")
+        self._activity_logger.log(
+            actor=actor,
+            action=action_name,
+            tool=name,
+            status="started",
+            details={"args": {k: v for k, v in args.items() if k != "password"}},
+        )
 
         # ── save_memory: sessiz ve hızlı ──────────────────────────────────────
         if name == "save_memory":
@@ -794,6 +1105,111 @@ class OminiLive:
                 r = await loop.run_in_executor(None, lambda: flight_finder(parameters=args, player=self.ui))
                 result = r or "Done."
 
+            elif name == "system_control_agent":
+                r = await loop.run_in_executor(None, lambda: system_control_agent(parameters=args, player=self.ui))
+                result = r or "Done."
+
+            elif name == "file_intelligence_agent":
+                r = await loop.run_in_executor(None, lambda: file_intelligence_agent(parameters=args, player=self.ui))
+                result = r or "Done."
+
+            elif name == "app_automation_agent":
+                r = await loop.run_in_executor(None, lambda: app_state_agent(parameters=args, player=self.ui))
+                result = r or "Done."
+
+            elif name == "system_monitor_agent":
+                act = str(args.get("action", "status")).lower().strip()
+                if act == "start":
+                    self._monitor.start()
+                    result = "System monitor started."
+                elif act == "stop":
+                    self._monitor.stop()
+                    result = "System monitor stopped."
+                elif act == "snapshot":
+                    snap = self._monitor.get_last_snapshot() or {"message": "No snapshot yet."}
+                    result = json.dumps(snap)
+                else:
+                    result = f"System monitor is {'running' if self._monitor.is_running() else 'stopped'}."
+
+            elif name == "scheduler_agent":
+                act = str(args.get("action", "list")).lower().strip()
+                if act == "schedule":
+                    interval = int(args.get("interval_seconds", 7200))
+                    job_id = self._scheduler.schedule(
+                        name=str(args.get("name", "scheduled_job")),
+                        interval_seconds=interval,
+                        action=str(args.get("job_action", "drink_water_reminder")),
+                        payload=args.get("payload", {}) or {},
+                    )
+                    result = f"Scheduled job {job_id} every {interval} seconds."
+                elif act == "schedule_defaults":
+                    j1 = self._scheduler.schedule(
+                        name="hydration_every_2h",
+                        interval_seconds=7200,
+                        action="drink_water_reminder",
+                        payload={"message": "Hydration reminder: drink water."},
+                    )
+                    j2 = self._scheduler.schedule(
+                        name="temp_cleanup_daily",
+                        interval_seconds=86400,
+                        action="temp_cleanup",
+                        payload={"message": "Daily temp cleanup executed."},
+                    )
+                    j3 = self._scheduler.schedule(
+                        name="disk_trend_every_6h",
+                        interval_seconds=21600,
+                        action="disk_trend_snapshot",
+                        payload={"path": "home"},
+                    )
+                    result = f"Default schedules installed: {j1}, {j2}, {j3}"
+                elif act == "cancel":
+                    job_id = str(args.get("job_id", "")).strip()
+                    result = "Cancelled." if (job_id and self._scheduler.cancel(job_id)) else "Job not found."
+                else:
+                    result = json.dumps(self._scheduler.list_jobs())
+
+            elif name == "activity_replay":
+                act = str(args.get("action", "recent")).lower().strip()
+                limit = int(args.get("limit", 20))
+                if act == "recent":
+                    result = json.dumps(self._activity_replay.recent(limit=limit))
+                elif act == "replay_last_safe":
+                    replayable = self._activity_replay.get_last_safe_replayable(limit=max(50, limit))
+                    if not replayable:
+                        result = "No safe replayable action found."
+                    else:
+                        rtool = replayable.get("tool", "")
+                        rargs = replayable.get("args", {}) or {}
+                        if rtool == "web_search":
+                            rr = await loop.run_in_executor(None, lambda: web_search_action(parameters=rargs, player=self.ui))
+                            result = f"Replayed web_search: {rr}"
+                        elif rtool == "weather_report":
+                            rr = await loop.run_in_executor(None, lambda: weather_action(parameters=rargs, player=self.ui))
+                            result = f"Replayed weather_report: {rr}"
+                        elif rtool == "browser_control":
+                            rr = await loop.run_in_executor(None, lambda: browser_control(parameters=rargs, player=self.ui))
+                            result = f"Replayed browser_control: {rr}"
+                        elif rtool == "file_intelligence_agent":
+                            rr = await loop.run_in_executor(None, lambda: file_intelligence_agent(parameters=rargs, player=self.ui))
+                            result = f"Replayed file_intelligence_agent: {rr}"
+                        elif rtool == "system_monitor_agent":
+                            ract = str(rargs.get("action", "status")).lower().strip()
+                            if ract == "start":
+                                self._monitor.start()
+                                rr = "System monitor started."
+                            elif ract == "stop":
+                                self._monitor.stop()
+                                rr = "System monitor stopped."
+                            elif ract == "snapshot":
+                                rr = json.dumps(self._monitor.get_last_snapshot() or {"message": "No snapshot yet."})
+                            else:
+                                rr = f"System monitor is {'running' if self._monitor.is_running() else 'stopped'}."
+                            result = f"Replayed system_monitor_agent: {rr}"
+                        else:
+                            result = "Last safe action uses unsupported replay tool."
+                else:
+                    result = self._activity_replay.suggest_replay(limit=limit)
+
             elif name == "shutdown_omini":
                 self.ui.write_log("SYS: Shutdown requested.")
                 self.speak("Goodbye, sir.")
@@ -808,7 +1224,6 @@ class OminiLive:
                 password = args.get("password", "")
                 success, msg = authenticate_user(username, password)
                 if success:
-                    get_auth_manager().set_password(username, password)  # Store password
                     self.ui.write_log(f"SYS: Login success: {msg}")
                     self.speak(f"Login successful as {username}.")
                 else:
@@ -835,6 +1250,22 @@ class OminiLive:
             result = f"Tool '{name}' failed: {e}"
             traceback.print_exc()
             self.speak_error(name, e)
+            self._activity_logger.log(
+                actor=actor,
+                action=action_name,
+                tool=name,
+                status="failed",
+                details={"error": str(e)},
+            )
+
+        else:
+            self._activity_logger.log(
+                actor=actor,
+                action=action_name,
+                tool=name,
+                status="completed",
+                details={"result_preview": str(result)[:220]},
+            )
 
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
@@ -848,6 +1279,8 @@ class OminiLive:
     async def _send_realtime(self):
         while True:
             msg = await self.out_queue.get()
+            if self._live_reconnect_requested:
+                return
             await self.session.send_realtime_input(media=msg)
 
     async def _listen_audio(self):
@@ -987,6 +1420,7 @@ class OminiLive:
             try:
                 print("[OMINI] 🔌 Connecting...")
                 self.ui.set_state("THINKING")
+                self._live_reconnect_requested = False
                 config = self._build_config()
 
                 async with (
@@ -1013,11 +1447,22 @@ class OminiLive:
             except Exception as e:
                 print(f"[OMINI] ⚠️ {e}")
                 traceback.print_exc()
+                if self._live_voice_key != "Charon" and self._is_live_voice_error(e):
+                    self._live_voice_key = "Charon"
+                    try:
+                        self._live_voice_manager.set_selected_key("Charon")
+                        self.ui.write_log("SYS: Gemini voice fell back to Charon.")
+                    except Exception:
+                        pass
+                elif self._live_voice_key != "Charon":
+                    self.ui.write_log("SYS: Live reconnect failed, keeping the selected Gemini voice.")
 
             self.set_speaking(False)
             self.ui.set_state("THINKING")
-            print("[OMINI] 🔄 Reconnecting in 3s...")
-            await asyncio.sleep(3)
+            reconnect_delay = 0.2 if self._live_reconnect_requested else 3
+            self._live_reconnect_requested = False
+            print(f"[OMINI] 🔄 Reconnecting in {reconnect_delay:.1f}s...")
+            await asyncio.sleep(reconnect_delay)
 
     async def _run_offline_mode(self):
         self.session = None
@@ -1055,21 +1500,26 @@ def main():
     # Show login screen first
     from ui import LoginScreen, OminiUI
     from security import get_auth_manager, authenticate_user
+    from PySide6 import QtWidgets, QtCore
+
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication([])
 
     login = LoginScreen()
     login.show()
 
-    # Wait for login to complete
-    from PySide6 import QtWidgets
+    # Use a local event loop for login only
     logged_in = [False]
+    local_loop = QtCore.QEventLoop()
 
-    def on_login(username, password):
-        get_auth_manager().set_password(username, password)
+    def on_login(username, mode):
         logged_in[0] = True
         login.close()
+        local_loop.quit()
 
     login.login_success.connect(on_login)
-    QtWidgets.QApplication.exec()
+    local_loop.exec()
 
     if not logged_in[0]:
         return  # Exit if not logged in

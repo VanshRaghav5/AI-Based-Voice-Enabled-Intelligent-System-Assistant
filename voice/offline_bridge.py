@@ -16,6 +16,11 @@ import requests
 import scipy.io.wavfile as wav
 import sounddevice as sd
 
+try:
+    from core.voice_manager import get_voice_manager
+except Exception:
+    get_voice_manager = None
+
 
 class OfflineVoiceBridge:
     """Local-only voice I/O bridge used when internet is unavailable."""
@@ -33,6 +38,12 @@ class OfflineVoiceBridge:
         self.piper_config = piper_dir / "en_US-danny-low.onnx.json"
         self.ollama_base_url = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_0")
+
+        if get_voice_manager is not None:
+            try:
+                self.set_voice_key(get_voice_manager().get_selected_key())
+            except Exception:
+                pass
 
     @staticmethod
     def has_internet(timeout: float = 1.2) -> bool:
@@ -114,7 +125,7 @@ class OfflineVoiceBridge:
             "messages": messages,
             "stream": False,
             "options": {
-                "temperature": 0.4,
+                "temperature": 0.2,
             },
         }
 
@@ -263,6 +274,42 @@ class OfflineVoiceBridge:
                     os.remove(path)
                 except OSError:
                     pass
+
+    def set_voice_model(self, model_file: str) -> bool:
+        model = str(model_file or "").strip()
+        if not model:
+            return False
+
+        piper_dir = self.base_dir / "voice" / "tts" / "piper"
+        model_path = piper_dir / model
+        config_path = Path(f"{model_path}.json")
+
+        if not model_path.exists():
+            return False
+
+        self.piper_model = model_path
+        self.piper_config = config_path if config_path.exists() else Path(f"{model_path}.json")
+        return True
+
+    def set_voice_key(self, key: str) -> bool:
+        if get_voice_manager is None:
+            return False
+
+        try:
+            manager = get_voice_manager()
+            profile = manager.set_selected_key(key)
+            return self.set_voice_model(profile.model_file)
+        except Exception:
+            return False
+
+    def get_voice_key(self) -> str:
+        if get_voice_manager is None:
+            return Path(self.piper_model).stem.lower()
+
+        try:
+            return get_voice_manager().get_selected_key()
+        except Exception:
+            return Path(self.piper_model).stem.lower()
 
     def speak(self, text: str) -> bool:
         """Speak text using local Piper TTS. Returns False if unavailable."""

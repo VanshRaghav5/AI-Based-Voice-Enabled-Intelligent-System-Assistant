@@ -33,8 +33,18 @@ except ImportError:
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
+def _get_base_dir() -> Path:
+    try:
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).parent
+        return Path(__file__).resolve().parent.parent
+    except Exception:
+        return Path.home()
+
 _SAFE_ROOTS: list[Path] = [
     Path.home(),
+    _get_base_dir(),
+    Path.cwd(),
 ]
 
 def _is_safe_path(target: Path) -> bool:
@@ -125,6 +135,18 @@ def _safe_trash(target: Path) -> str:
     return f"Moved to Trash: {target.name}"
 
 
+def _is_protected_target(target: Path) -> bool:
+    protected = {
+        _get_desktop(), _get_downloads(), _get_documents(),
+        _get_pictures(), _get_music(), _get_videos(), Path.home()
+    }
+    try:
+        resolved = target.resolve()
+        return resolved in {p.resolve() for p in protected}
+    except Exception:
+        return False
+
+
 def list_files(path: str = "desktop", show_hidden: bool = False) -> str:
     try:
         target = _resolve_path(path)
@@ -191,11 +213,7 @@ def delete_file(path: str, name: str = "") -> str:
             return f"Not found: {target.name}"
 
         # Güvenli dizin kontrolü — kritik kullanıcı klasörlerini koru
-        protected = {
-            _get_desktop(), _get_downloads(), _get_documents(),
-            _get_pictures(), _get_music(), _get_videos(), Path.home()
-        }
-        if target.resolve() in {p.resolve() for p in protected}:
+        if _is_protected_target(target):
             return f"Protected directory, cannot delete: {target.name}"
 
         return _safe_trash(target)

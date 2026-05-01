@@ -1,5 +1,11 @@
 # OMINI Assistant AI - Full Developer Understanding Report
 
+Update note:
+- This report is now complemented by two focused deep-dive documents:
+  - `BACKEND_DEEP_UNDERSTANDING.md`
+  - `FRONTEND_DEEP_UNDERSTANDING.md`
+- Use this file as the broad system report and the two new files for implementation-level depth.
+
 ## 1. Purpose and Scope
 This report explains how the current codebase works end to end, including:
 - Startup and runtime behavior

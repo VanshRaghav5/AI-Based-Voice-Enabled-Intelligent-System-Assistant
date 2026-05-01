@@ -242,6 +242,74 @@ def _call_tool(tool: str, parameters: dict, speak: Callable | None) -> str:
         from actions.flight_finder import flight_finder
         return flight_finder(parameters=parameters, player=None, speak=speak) or "Done."
 
+    elif tool == "system_control_agent":
+        from actions.system_control_agent import system_control_agent
+        return system_control_agent(parameters=parameters, player=None) or "Done."
+
+    elif tool == "file_intelligence_agent":
+        from actions.file_intelligence_agent import file_intelligence_agent
+        return file_intelligence_agent(parameters=parameters, player=None) or "Done."
+
+    elif tool == "app_automation_agent":
+        from agent.app_state_agent import app_state_agent
+        return app_state_agent(parameters=parameters, player=None) or "Done."
+
+    elif tool == "system_monitor_agent":
+        from agent.system_state_monitor import get_system_state_monitor
+        monitor = get_system_state_monitor()
+        action = str(parameters.get("action", "status")).lower().strip()
+        if action == "start":
+            monitor.start()
+            return "System monitor started."
+        if action == "stop":
+            monitor.stop()
+            return "System monitor stopped."
+        if action == "snapshot":
+            return str(monitor.get_last_snapshot())
+        return f"System monitor is {'running' if monitor.is_running() else 'stopped'}."
+
+    elif tool == "scheduler_agent":
+        from agent.background_scheduler import get_background_scheduler
+        scheduler = get_background_scheduler()
+        action = str(parameters.get("action", "list")).lower().strip()
+        if action == "schedule":
+            jid = scheduler.schedule(
+                name=str(parameters.get("name", "scheduled_job")),
+                interval_seconds=int(parameters.get("interval_seconds", 7200)),
+                action=str(parameters.get("job_action", "drink_water_reminder")),
+                payload=parameters.get("payload", {}) or {},
+            )
+            return f"Scheduled job {jid}."
+        if action == "schedule_defaults":
+            j1 = scheduler.schedule(
+                name="hydration_every_2h",
+                interval_seconds=7200,
+                action="drink_water_reminder",
+                payload={"message": "Hydration reminder: drink water."},
+            )
+            j2 = scheduler.schedule(
+                name="temp_cleanup_daily",
+                interval_seconds=86400,
+                action="temp_cleanup_reminder",
+                payload={"message": "Daily cleanup is due. Say: clean temp cache."},
+            )
+            return f"Default jobs installed: {j1}, {j2}"
+        if action == "cancel":
+            jid = str(parameters.get("job_id", "")).strip()
+            return "Cancelled." if (jid and scheduler.cancel(jid)) else "Job not found."
+        return str(scheduler.list_jobs())
+
+    elif tool == "activity_replay":
+        from core.activity_replay import ActivityReplay
+        replay = ActivityReplay(BASE_DIR)
+        action = str(parameters.get("action", "recent")).lower().strip()
+        if action == "recent":
+            return str(replay.recent(limit=int(parameters.get("limit", 20))))
+        if action == "replay_last_safe":
+            entry = replay.get_last_safe_replayable(limit=200)
+            return str(entry) if entry else "No safe replayable action found."
+        return replay.suggest_replay(limit=int(parameters.get("limit", 20)))
+
     else:
         print(f"[Executor] ⚠️ Unknown tool '{tool}' — falling back to generated_code")
         return _run_generated_code(f"Accomplish this task: {parameters}", speak=speak)

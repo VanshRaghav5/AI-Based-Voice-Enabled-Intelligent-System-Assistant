@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "name": "low_battery_alert",
+      "event": "system.alert",
+      "kind": "low_battery",
+      "enabled": true
+    },
+    {
+      "name": "high_cpu_alert",
+      "event": "system.alert",
+      "kind": "high_cpu",
+      "enabled": true
+    }
+  ]
+}

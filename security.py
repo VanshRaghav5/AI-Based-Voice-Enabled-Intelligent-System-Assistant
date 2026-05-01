@@ -27,6 +27,18 @@ try:
 except ImportError:
     _KEYRING_AVAILABLE = False
 
+try:
+    import jwt
+    from jwt import PyJWTError
+    _JWT_AVAILABLE = True
+except ImportError:
+    jwt = None
+
+    class PyJWTError(Exception):
+        pass
+
+    _JWT_AVAILABLE = False
+
 
 def _get_base_dir():
     import sys
@@ -373,6 +385,7 @@ class AuthManager:
     MAX_FAILED_ATTEMPTS = 5      # Lock after 5 failed login attempts
     LOCKOUT_DURATION = 300       # 5 minutes lockout
     SESSION_DURATION = 3600      # 1 hour session duration
+    JWT_ALGORITHM = "HS256"
 
     # Role-based permissions
     PERMISSIONS = {
@@ -407,7 +420,91 @@ class AuthManager:
         self._lock = threading.Lock()
         self._users: dict[str, UserProfile] = {}
         self._current_user: Optional[UserProfile] = None
+        self._jwt_secret: Optional[str] = None
         self._load_users()
+
+    def _get_jwt_secret(self) -> str:
+        """Load or create the signing secret used for JWT sessions."""
+        if self._jwt_secret:
+            return self._jwt_secret
+
+        env_secret = os.environ.get("OMINI_JWT_SECRET")
+        if env_secret:
+            self._jwt_secret = env_secret
+            return env_secret
+
+        secret_path = BASE_DIR / "config" / "jwt_secret.json"
+        if secret_path.exists():
+            try:
+                with open(secret_path, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                    secret = payload.get("secret", "")
+                    if secret:
+                        self._jwt_secret = secret
+                        return secret
+            except Exception:
+                pass
+
+        secret_path.parent.mkdir(parents=True, exist_ok=True)
+        secret = secrets.token_urlsafe(48)
+        with open(secret_path, "w", encoding="utf-8") as f:
+            json.dump({"secret": secret}, f, indent=2)
+        self._jwt_secret = secret
+        return secret
+
+    def _issue_session_token(self, username: str, role: str, expires_at: float) -> str:
+        """Create a signed session token for the authenticated user."""
+        if not _JWT_AVAILABLE:
+            return secrets.token_urlsafe(32)
+
+        payload = {
+            "sub": username,
+            "role": role,
+            "iat": int(time.time()),
+            "exp": int(expires_at),
+            "aud": "omini-assistant",
+        }
+        return jwt.encode(payload, self._get_jwt_secret(), algorithm=self.JWT_ALGORITHM)
+
+    def _token_is_valid(self, profile: Optional[UserProfile]) -> bool:
+        """Check whether the stored session token is still valid."""
+        if not profile:
+            return False
+
+        now = time.time()
+        if profile.session_expires and now > profile.session_expires:
+            return False
+
+        if not profile.session_token or not _JWT_AVAILABLE:
+            return True
+
+        try:
+            payload = jwt.decode(
+                profile.session_token,
+                self._get_jwt_secret(),
+                algorithms=[self.JWT_ALGORITHM],
+                audience="omini-assistant",
+            )
+        except PyJWTError:
+            return False
+
+        return payload.get("sub") == profile.username and payload.get("role") == profile.role
+
+    def _activate_session(self, username: str, role: str) -> UserProfile:
+        """Create and store the active session profile."""
+        now = time.time()
+        profile = self._users.get(username)
+        if profile is None:
+            profile = UserProfile(username=username, role=role)
+            self._users[username] = profile
+
+        profile.role = role
+        profile.failed_attempts = 0
+        profile.locked_until = 0.0
+        profile.session_expires = now + self.SESSION_DURATION
+        profile.session_token = self._issue_session_token(username, role, profile.session_expires)
+        self._current_user = profile
+        return profile
 
     def _load_users(self):
         """Load users from config or create default."""
@@ -475,13 +572,15 @@ class AuthManager:
                         return False, f"Account locked for {self.LOCKOUT_DURATION}s after {self.MAX_FAILED_ATTEMPTS} failed attempts."
                 return False, "Invalid credentials."
 
-            # Reset failed attempts and create session
-            profile.failed_attempts = 0
-            profile.session_token = secrets.token_urlsafe(32)
-            profile.session_expires = now + self.SESSION_DURATION
-            self._current_user = profile
+            self._activate_session(username, profile.role)
 
             return True, f"Authenticated as {profile.role}"
+
+    def continue_as_guest(self) -> tuple[bool, str]:
+        """Start a restricted guest session without credentials."""
+        with self._lock:
+            self._activate_session("guest", UserRole.GUEST)
+            return True, "Continued as guest."
 
     def _hash_password(self, username: str, password: str) -> str:
         """Hash password (simple SHA256 with username salt)."""
@@ -535,8 +634,8 @@ class AuthManager:
             if not self._current_user:
                 return False, "Not authenticated. Please login first."
 
-            # Check session expiry
-            if time.time() > self._current_user.session_expires:
+            # Check JWT-backed session validity
+            if not self._token_is_valid(self._current_user):
                 self._current_user = None
                 return False, "Session expired. Please login again."
 
@@ -562,13 +661,11 @@ class AuthManager:
 
     def is_authenticated(self) -> bool:
         """Check if user is authenticated."""
-        if not self._current_user:
-            return False
-        return time.time() <= self._current_user.session_expires
+        return self._token_is_valid(self._current_user)
 
     def get_current_user(self) -> Optional[str]:
         """Get current username."""
-        if self._current_user and time.time() <= self._current_user.session_expires:
+        if self._token_is_valid(self._current_user):
             return self._current_user.username
         return None
 
@@ -599,6 +696,11 @@ def is_authenticated() -> bool:
 def authenticate_user(username: str, password: str) -> tuple[bool, str]:
     """Authenticate user."""
     return get_auth_manager().authenticate(username, password)
+
+
+def continue_as_guest() -> tuple[bool, str]:
+    """Start a guest session."""
+    return get_auth_manager().continue_as_guest()
 
 
 def authorize_tool(tool_name: str, action: str = None) -> tuple[bool, str]:

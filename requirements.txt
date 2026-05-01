@@ -5,6 +5,7 @@ requests
 beautifulsoup4
 pillow
 python-dotenv
+PyJWT
 google-genai
 google-generativeai
 PySide6
@@ -20,3 +21,11 @@ openai-whisper
 torch
 pytest
 keyring
+opencv-python
+mss
+pycaw
+win10toast          
+send2trash 
+youtube-transcript-api
+pywinauto
+pyaudio
